@@ -149,8 +149,11 @@ export const AIMessageContent: React.FC<AIMessageContentProps> = ({ text, onOpen
         const demoId = link.getAttribute('data-demo-id') ||
                       link.getAttribute('href')?.replace('#/demo/', '');
 
-        if (demoId && demoId !== 'DEMO_ID' && demoId !== 'ACTUAL_DEMO_ID') {
+        if (demoId && demoId !== 'DEMO_ID' && demoId !== 'ACTUAL_DEMO_ID' && demoId.trim()) {
+          console.log('Opening demo:', demoId);
           onOpenDemo?.(demoId);
+        } else {
+          console.warn('Invalid demo ID:', demoId);
         }
       }
     };

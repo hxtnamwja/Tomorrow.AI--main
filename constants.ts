@@ -117,6 +117,7 @@ export const DICTIONARY = {
     waitingApproval: "Waiting for General Admin approval.",
     generalAdminView: "Super Admin View",
     communityReview: "Community Review",
+    clearChatHistory: "Clear Chat History",
     
     // Bounty
     bountyStatus: "Status",
@@ -316,6 +317,7 @@ export const DICTIONARY = {
     waitingApproval: "等待总管理员审核。",
     generalAdminView: "超级管理员视角",
     communityReview: "社区审核",
+    clearChatHistory: "清除聊天历史",
     
     // Bounty
     bountyStatus: "状态",

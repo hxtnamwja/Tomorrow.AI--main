@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, X, ChevronRight } from 'lucide-react';
+import { Sparkles, X, ChevronRight, Trash2 } from 'lucide-react';
 import { AiService } from '../services/aiService';
 import { AIMessageContent } from './AIMessageContent';
 
@@ -18,10 +18,30 @@ export const AiChatWidget: React.FC<AiChatWidgetProps> = ({ t, language, onOpenD
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize Chat Welcome Message when lang changes
+  // Load messages from localStorage when component mounts
   useEffect(() => {
-     setMessages([{role: 'model', text: t('chatWelcome')}]);
+    const savedMessages = localStorage.getItem('ai_chat_messages');
+    if (savedMessages) {
+      try {
+        const parsedMessages = JSON.parse(savedMessages);
+        if (Array.isArray(parsedMessages) && parsedMessages.length > 0) {
+          setMessages(parsedMessages);
+          return;
+        }
+      } catch (error) {
+        console.error('Error parsing saved messages:', error);
+      }
+    }
+    // Initialize with welcome message if no saved messages
+    setMessages([{role: 'model', text: t('chatWelcome')}]);
   }, [language, t]);
+
+  // Save messages to localStorage when they change
+  useEffect(() => {
+    if (messages.length > 0) {
+      localStorage.setItem('ai_chat_messages', JSON.stringify(messages));
+    }
+  }, [messages]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -69,6 +89,13 @@ export const AiChatWidget: React.FC<AiChatWidgetProps> = ({ t, language, onOpenD
     }
   };
 
+  const handleClearMessages = () => {
+    if (window.confirm(t('clearChatHistory') || '确定要清除聊天历史吗？')) {
+      localStorage.removeItem('ai_chat_messages');
+      setMessages([{role: 'model', text: t('chatWelcome')}]);
+    }
+  };
+
   return (
     <>
       <AnimatePresence>
@@ -84,7 +111,16 @@ export const AiChatWidget: React.FC<AiChatWidgetProps> = ({ t, language, onOpenD
                 <Sparkles className="w-4 h-4" />
                 <span className="font-bold text-sm tracking-wide">{t('aiChatTitle')}</span>
               </div>
-              <button onClick={() => setIsOpen(false)}><X className="w-4 h-4 opacity-70 hover:opacity-100" /></button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={handleClearMessages}
+                  className="opacity-70 hover:opacity-100"
+                  title={t('clearChatHistory') || '清除聊天历史'}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+                <button onClick={() => setIsOpen(false)}><X className="w-4 h-4 opacity-70 hover:opacity-100" /></button>
+              </div>
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50 min-h-[300px]">

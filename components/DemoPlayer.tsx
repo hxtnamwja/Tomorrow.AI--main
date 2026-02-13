@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, RefreshCw, Sparkles, Heart, Maximize2, Minimize2, Smartphone, Send, RotateCcw } from 'lucide-react';
+import { X, RefreshCw, Sparkles, Heart, Maximize2, Minimize2, Smartphone, Send, RotateCcw, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Demo } from '../types';
 import { AiService } from '../services/aiService';
@@ -250,6 +250,34 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange }: { dem
     }
   };
 
+  // Load AI messages from localStorage when component mounts
+  useEffect(() => {
+    const savedMessages = localStorage.getItem(`demo_${demo.id}_ai_messages`);
+    if (savedMessages) {
+      try {
+        const parsedMessages = JSON.parse(savedMessages);
+        if (Array.isArray(parsedMessages) && parsedMessages.length > 0) {
+          setAiMessages(parsedMessages);
+          return;
+        }
+      } catch (error) {
+        console.error('Error parsing saved messages:', error);
+      }
+    }
+    // Initialize with welcome message if no saved messages
+    setAiMessages([{ 
+      role: 'model', 
+      text: `👋 你好！我是你的学习向导！\n\n我可以帮你：\n• **理解概念** - 深入讲解这个演示展示的科学原理\n• **互动学习** - 引导你通过操作演示来探索知识\n• **联系实际** - 解释这些概念在现实世界中的应用\n• **启发思考** - 提出有趣的问题帮助你深入理解\n\n💡 **建议**：试着与演示程序互动（拖动滑块、点击按钮等），然后告诉我你观察到了什么现象？` 
+    }]);
+  }, [demo.id]);
+
+  // Save AI messages to localStorage when they change
+  useEffect(() => {
+    if (aiMessages.length > 0) {
+      localStorage.setItem(`demo_${demo.id}_ai_messages`, JSON.stringify(aiMessages));
+    }
+  }, [aiMessages, demo.id]);
+
   // Load KaTeX when AI tab is activated
   // useEffect(() => {
   //   if (activeTab === 'ai') {
@@ -272,15 +300,6 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange }: { dem
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, [onOpenDemo]);
-
-  useEffect(() => {
-    if (activeTab === 'ai' && aiMessages.length === 0) {
-      setAiMessages([{ 
-        role: 'model', 
-        text: `👋 你好！我是你的学习向导！\n\n我可以帮你：\n• **理解概念** - 深入讲解这个演示展示的科学原理\n• **互动学习** - 引导你通过操作演示来探索知识\n• **联系实际** - 解释这些概念在现实世界中的应用\n• **启发思考** - 提出有趣的问题帮助你深入理解\n\n💡 **建议**：试着与演示程序互动（拖动滑块、点击按钮等），然后告诉我你观察到了什么现象？` 
-      }]);
-    }
-  }, [activeTab, aiMessages.length]);
 
   const handleDemoAiAsk = async (query: string) => {
       if (!query.trim()) return;
@@ -325,6 +344,16 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange }: { dem
       } finally {
         setAiLoading(false);
       }
+  };
+
+  const handleClearAiMessages = () => {
+    if (window.confirm(t('clearChatHistory') || '确定要清除聊天历史吗？')) {
+      localStorage.removeItem(`demo_${demo.id}_ai_messages`);
+      setAiMessages([{ 
+        role: 'model', 
+        text: `👋 你好！我是你的学习向导！\n\n我可以帮你：\n• **理解概念** - 深入讲解这个演示展示的科学原理\n• **互动学习** - 引导你通过操作演示来探索知识\n• **联系实际** - 解释这些概念在现实世界中的应用\n• **启发思考** - 提出有趣的问题帮助你深入理解\n\n💡 **建议**：试着与演示程序互动（拖动滑块、点击按钮等），然后告诉我你观察到了什么现象？` 
+      }]);
+    }
   };
 
   return (
@@ -534,6 +563,16 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange }: { dem
 
             {activeTab === 'ai' && (
               <div className="h-full flex flex-col animate-in fade-in slide-in-from-right-4 duration-300">
+                 <div className="flex items-center justify-between mb-4">
+                   <h5 className="text-sm font-bold text-slate-700">{t('aiHelper')}</h5>
+                   <button 
+                     onClick={handleClearAiMessages}
+                     className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1"
+                   >
+                     <Trash2 className="w-3.5 h-3.5" />
+                     <span className="hidden sm:inline">清除历史</span>
+                   </button>
+                 </div>
                  <div className="flex-1 space-y-4 mb-4 overflow-y-auto">
                    {aiMessages.map((msg, idx) => (
                      <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
