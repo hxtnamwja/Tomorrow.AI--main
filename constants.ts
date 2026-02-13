@@ -199,6 +199,21 @@ export const DICTIONARY = {
     publiclyAvailable: "Publicly available to all researchers.",
     exclusiveToCommunity: "Exclusive to specific community members.",
     noCommunitiesJoin: "You haven't joined any communities. Please join a community first.",
+    // Multi-file upload
+    singleFile: "Single File",
+    multiFile: "Multi-File (ZIP)",
+    uploadZipFile: "Upload ZIP File",
+    zipFileDesc: "Upload a ZIP file containing HTML, CSS, JS, and image files.",
+    selectZipFile: "Select ZIP File",
+    analyzingZip: "Analyzing ZIP file...",
+    projectStructure: "Project Structure",
+    emptyZip: "Empty ZIP file",
+    project: "Project",
+    multiFilePreviewDesc: "Multi-file projects will be previewed after upload.",
+    projectDetails: "Project Details",
+    fileName: "File Name",
+    fileSize: "File Size",
+    fileCount: "File Count",
     // Status
     published: "Published"
   },
@@ -398,7 +413,22 @@ export const DICTIONARY = {
     playgroundDesc: "粘贴 HTML 代码并即时预览。",
     publiclyAvailable: "对所有研究人员公开可用。",
     exclusiveToCommunity: "仅特定社区成员可用。",
-    noCommunitiesJoin: "您尚未加入任何社区，请先加入一个社区。",
+    noCommunitiesJoin: "您还没有加入任何社区。请先加入一个社区。",
+    // Multi-file upload
+    singleFile: "单文件",
+    multiFile: "多文件（ZIP）",
+    uploadZipFile: "上传 ZIP 文件",
+    zipFileDesc: "上传一个包含 HTML、CSS、JS 和图片文件的 ZIP 文件。",
+    selectZipFile: "选择 ZIP 文件",
+    analyzingZip: "正在分析 ZIP 文件...",
+    projectStructure: "项目结构",
+    emptyZip: "ZIP 文件为空",
+    project: "项目",
+    multiFilePreviewDesc: "多文件项目将在上传后进行预览。",
+    projectDetails: "项目详情",
+    fileName: "文件名",
+    fileSize: "文件大小",
+    fileCount: "文件数量",
     // Status
     published: "已发布"
   }

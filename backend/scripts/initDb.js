@@ -82,6 +82,9 @@ const createTables = async () => {
       status TEXT NOT NULL CHECK(status IN ('pending', 'published', 'rejected')),
       rejection_reason TEXT,
       bounty_id TEXT,
+      project_type TEXT DEFAULT 'single-file' CHECK(project_type IN ('single-file', 'multi-file')),
+      entry_file TEXT,
+      project_size INTEGER,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (community_id) REFERENCES communities(id) ON DELETE CASCADE
     )

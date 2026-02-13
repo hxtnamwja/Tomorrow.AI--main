@@ -1,7 +1,16 @@
 
 import React, { useState } from 'react';
-import { Target, Globe, Users, Check, Upload, FileCode, Play, Image as ImageIcon, X } from 'lucide-react';
+import { Target, Globe, Users, Check, Upload, FileCode, Play, Image as ImageIcon, X, FolderOpen, FileText, Image as ImageIcon2 } from 'lucide-react';
 import { Demo, Category, Subject, Bounty, Layer, Community } from '../types';
+
+interface ProjectFile {
+  type: 'file' | 'directory';
+  path: string;
+  name: string;
+  size?: number;
+  extension?: string;
+  children?: ProjectFile[];
+}
 
 export const UploadWizard = ({ t, categories, communities, currentUserId, onSubmit, onCancel, bountyContext }: { 
   t: any, 
@@ -12,13 +21,15 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
   onCancel: () => void,
   bountyContext: Bounty | null
 }) => {
-  // Step 0: Select Target (General vs Community)
-  // Step 1: Info (Title, Category - filtered)
-  // Step 2: Code
-  // Step 3: Preview
   const [step, setStep] = useState(0);
   const [isPlayground, setIsPlayground] = useState(false);
   const [editorMode, setEditorMode] = useState<'upload' | 'paste'>('upload');
+  const [projectMode, setProjectMode] = useState<'single' | 'multi'>('single');
+  const [zipFile, setZipFile] = useState<File | null>(null);
+  const [projectStructure, setProjectStructure] = useState<ProjectFile[]>([]);
+  const [isAnalyzingZip, setIsAnalyzingZip] = useState(false);
+  const [previewContent, setPreviewContent] = useState<string>('');
+  const [entryFile, setEntryFile] = useState<string>('');
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -60,22 +71,223 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
     setFormData(prev => ({ ...prev, thumbnailUrl: '' }));
   };
 
-  const handleSubmit = () => {
-    const newDemo: Demo = {
-      id: `demo-${Date.now()}`,
-      title: formData.title,
-      description: formData.description,
-      author: currentUserId, // Use currentUserId as author
-      categoryId: formData.categoryId,
-      layer: formData.layer,
-      communityId: formData.communityId,
-      code: formData.code,
-      thumbnailUrl: formData.thumbnailUrl || undefined,
-      status: 'pending',
-      createdAt: Date.now(),
-      bountyId: bountyContext?.id
+  const handleZipUpload = async (file: File) => {
+    setIsAnalyzingZip(true);
+    try {
+      const JSZip = await import('jszip');
+      const zip = await JSZip.loadAsync(file);
+      
+      const structure: ProjectFile[] = [];
+      const htmlFiles: { path: string; content: string }[] = [];
+      const imageFiles: Map<string, string> = new Map();
+      
+      for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+        // 过滤掉系统隐藏文件和目录
+        if (relativePath.includes('__MACOSX') || relativePath.startsWith('.') || relativePath.includes('.DS_Store')) {
+          continue;
+        }
+        
+        if (zipEntry.dir) {
+          structure.push({
+            type: 'directory',
+            path: relativePath,
+            name: relativePath.split('/').filter(Boolean).pop() || relativePath
+          });
+        } else {
+          const ext = relativePath.split('.').pop()?.toLowerCase();
+          structure.push({
+            type: 'file',
+            path: relativePath,
+            name: relativePath.split('/').pop() || relativePath,
+            extension: ext ? `.${ext}` : '',
+            size: 0
+          });
+          
+          // 收集图片文件并转换为DataURL
+          if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'].includes(ext ? `.${ext}` : '')) {
+            try {
+              const dataUrl = await zipEntry.async('base64');
+              const mimeType = getImageMimeType(ext || '');
+              imageFiles.set(relativePath, `data:${mimeType};base64,${dataUrl}`);
+            } catch (error) {
+              console.warn('Error processing image:', relativePath, error);
+            }
+          }
+          
+          // 收集所有HTML文件
+          if (['.html', '.htm'].includes(ext ? `.${ext}` : '')) {
+            let content = await zipEntry.async('string');
+            // 替换HTML中的图片路径为DataURL
+            content = replaceImagePaths(content, imageFiles);
+            htmlFiles.push({ path: relativePath, content });
+          }
+        }
+      }
+      
+      // 优先选择根目录的HTML文件，然后选择其他HTML文件
+      let selectedHtml = htmlFiles.find(file => file.path.split('/').length === 1);
+      if (!selectedHtml && htmlFiles.length > 0) {
+        selectedHtml = htmlFiles[0];
+      }
+      
+      setProjectStructure(structure);
+      setZipFile(file);
+      setPreviewContent(selectedHtml?.content || '');
+      setEntryFile(selectedHtml?.path || '');
+      setIsAnalyzingZip(false);
+    } catch (error) {
+      console.error('Error analyzing ZIP:', error);
+      setIsAnalyzingZip(false);
+      alert('ZIP文件解析失败');
+    }
+  };
+
+  // 辅助函数：获取图片的MIME类型
+  const getImageMimeType = (ext: string): string => {
+    const mimeTypes: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.svg': 'image/svg+xml',
+      '.webp': 'image/webp',
+      '.bmp': 'image/bmp',
+      '.ico': 'image/x-icon'
     };
-    onSubmit(newDemo);
+    return mimeTypes[ext] || 'image/unknown';
+  };
+
+  // 辅助函数：替换HTML中的图片路径为DataURL
+  const replaceImagePaths = (html: string, imageFiles: Map<string, string>): string => {
+    let modifiedHtml = html;
+    
+    // 替换<img>标签的src属性
+    modifiedHtml = modifiedHtml.replace(/<img\s+[^>]*src="([^"]+)"[^>]*>/gi, (match, src) => {
+      // 处理相对路径
+      const normalizedSrc = src.replace(/^\/+/, '');
+      if (imageFiles.has(normalizedSrc)) {
+        const dataUrl = imageFiles.get(normalizedSrc);
+        return match.replace(src, dataUrl || src);
+      }
+      return match;
+    });
+    
+    // 替换CSS中的background-image
+    modifiedHtml = modifiedHtml.replace(/background-image:\s*url\(['"]([^'"]+)['"]\)/gi, (match, url) => {
+      const normalizedUrl = url.replace(/^\/+/, '');
+      if (imageFiles.has(normalizedUrl)) {
+        const dataUrl = imageFiles.get(normalizedUrl);
+        return match.replace(url, dataUrl || url);
+      }
+      return match;
+    });
+    
+    return modifiedHtml;
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  };
+
+  const getFileIcon = (extension?: string) => {
+    if (!extension) return <FileText className="w-4 h-4 text-slate-400" />;
+    if (['.html', '.htm'].includes(extension)) return <FileCode className="w-4 h-4 text-orange-500" />;
+    if (['.css'].includes(extension)) return <FileText className="w-4 h-4 text-blue-500" />;
+    if (['.js', '.ts'].includes(extension)) return <FileText className="w-4 h-4 text-yellow-500" />;
+    if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'].includes(extension)) return <ImageIcon2 className="w-4 h-4 text-purple-500" />;
+    return <FileText className="w-4 h-4 text-slate-400" />;
+  };
+
+  const handleSubmit = async () => {
+    const token = localStorage.getItem('sci_demo_token');
+    const apiBase = import.meta.env.VITE_API_URL || '/api/v1';
+    
+    if (projectMode === 'multi' && zipFile) {
+      const formDataToSend = new FormData();
+      formDataToSend.append('zipFile', zipFile);
+      formDataToSend.append('title', formData.title);
+      formDataToSend.append('description', formData.description);
+      formDataToSend.append('categoryId', formData.categoryId);
+      formDataToSend.append('layer', formData.layer);
+      if (formData.communityId) {
+        formDataToSend.append('communityId', formData.communityId);
+      }
+      
+      try {
+        console.log('开始上传ZIP文件...');
+        console.log('API Base:', apiBase);
+        console.log('Token:', token ? '已提供' : '未提供');
+        console.log('FormData包含:', {
+          zipFile: zipFile ? zipFile.name : '无',
+          title: formData.title,
+          description: formData.description,
+          categoryId: formData.categoryId,
+          layer: formData.layer,
+          communityId: formData.communityId
+        });
+        
+        const response = await fetch(`${apiBase}/demos/upload-zip`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          body: formDataToSend
+        });
+        
+        console.log('响应状态:', response.status);
+        console.log('响应头:', Object.fromEntries(response.headers));
+        
+        const result = await response.json();
+        console.log('响应数据:', result);
+        
+        if (result.code === 200) {
+          // For multi-file projects, the demo is already created on the backend
+          // We just need to notify the parent component to refresh data
+          onSubmit({
+            id: result.data.id,
+            title: formData.title,
+            description: formData.description,
+            author: currentUserId,
+            categoryId: formData.categoryId,
+            layer: formData.layer,
+            communityId: formData.communityId,
+            code: result.data.entryFile,
+            thumbnailUrl: formData.thumbnailUrl || undefined,
+            status: 'pending',
+            createdAt: Date.now(),
+            bountyId: bountyContext?.id,
+            projectType: 'multi-file',
+            entryFile: result.data.entryFile,
+            projectSize: result.data.size
+          });
+        } else {
+          console.error('上传失败，后端返回错误:', result);
+          alert(`上传失败: ${result.message || '未知错误'}`);
+        }
+      } catch (error) {
+        console.error('上传错误:', error);
+        alert(`上传失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      }
+    } else {
+      const newDemo: Demo = {
+        id: `demo-${Date.now()}`,
+        title: formData.title,
+        description: formData.description,
+        author: currentUserId,
+        categoryId: formData.categoryId,
+        layer: formData.layer,
+        communityId: formData.communityId,
+        code: formData.code,
+        thumbnailUrl: formData.thumbnailUrl || undefined,
+        status: 'pending',
+        createdAt: Date.now(),
+        bountyId: bountyContext?.id,
+        projectType: 'single-file'
+      };
+      onSubmit(newDemo);
+    }
   };
   
   // If uploading for a bounty, skip step 0 as context is fixed
@@ -239,72 +451,202 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
 
          {step === 2 && (
            <div className="h-full flex flex-col animate-in slide-in-from-right-8 duration-300">
+             {/* Project Mode Selection */}
              <div className="flex gap-4 mb-4">
                <button 
                  onClick={() => {
+                   setProjectMode('single');
                    setEditorMode('upload');
-                   const fileInput = document.getElementById('code-upload') as HTMLInputElement;
-                   if (fileInput) fileInput.value = '';
                  }}
-                 className={`flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-all ${editorMode === 'upload' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-500'}`}
+                 className={`flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-all ${projectMode === 'single' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-500'}`}
                >
-                 {t('uploadFile')}
+                 {t('singleFile')}
                </button>
                <button 
-                 onClick={() => setEditorMode('paste')}
-                 className={`flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-all ${editorMode === 'paste' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                 onClick={() => {
+                   setProjectMode('multi');
+                   setEditorMode('upload');
+                 }}
+                 className={`flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-all ${projectMode === 'multi' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-500'}`}
                >
-                 {t('pasteCode')}
+                 {t('multiFile')}
                </button>
              </div>
 
-             <div className="flex-1 relative min-h-[300px]">
-                {/* File Upload Mode */}
-                <div className={`absolute inset-0 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 transition-all ${editorMode === 'upload' ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none z-0'}`}>
-                    <div className="text-center p-8 w-full flex flex-col items-center justify-center">
-                        <div className="w-16 h-16 rounded-full bg-indigo-100 flex items-center justify-center mb-4 text-indigo-600">
-                            <Upload className="w-8 h-8" />
-                        </div>
-                        <h4 className="text-lg font-bold text-slate-700 mb-2">{t('uploadCodeFile')}</h4>
-                        <p className="text-sm text-slate-500 mb-6">{t('selectHtmlFile')}</p>
-                        
-                        <input 
-                          id="code-upload"
-                          type="file" 
-                          accept=".html,.htm"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                                const reader = new FileReader();
-                                reader.onload = (ev) => {
-                                    setFormData({...formData, code: ev.target?.result as string});
-                                    setEditorMode('paste'); // Auto switch to preview/edit after upload
-                                };
-                                reader.readAsText(file);
-                            }
-                          }}
-                        />
-                        
-                        <button 
-                            type="button"
-                            onClick={() => document.getElementById('code-upload')?.click()}
-                            className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium shadow-sm hover:bg-indigo-700 transition-colors"
-                        >
-                            {t('selectFile')}
-                        </button>
-                    </div>
-                </div>
+             {/* Single File Mode */}
+             {projectMode === 'single' && (
+               <>
+                 <div className="flex gap-4 mb-4">
+                   <button 
+                     onClick={() => {
+                       setEditorMode('upload');
+                       const fileInput = document.getElementById('code-upload') as HTMLInputElement;
+                       if (fileInput) fileInput.value = '';
+                     }}
+                     className={`flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-all ${editorMode === 'upload' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-500'}`}
+                   >
+                     {t('uploadFile')}
+                   </button>
+                   <button 
+                     onClick={() => setEditorMode('paste')}
+                     className={`flex-1 py-3 rounded-xl border-2 text-sm font-bold transition-all ${editorMode === 'paste' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                   >
+                     {t('pasteCode')}
+                   </button>
+                 </div>
 
-                {/* Paste Code Mode (Textarea) */}
-                <textarea 
-                  value={formData.code} 
-                  onChange={e => setFormData({...formData, code: e.target.value})}
-                  className={`absolute inset-0 w-full h-full p-4 font-mono text-sm bg-slate-900 text-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none transition-all ${editorMode === 'paste' ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none z-0'}`}
-                  spellCheck={false}
-                  placeholder={t('pasteCodePlaceholder')}
-                />
-             </div>
+                 <div className="flex-1 relative min-h-[300px]">
+                    {/* File Upload Mode */}
+                    <div className={`absolute inset-0 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 transition-all ${editorMode === 'upload' ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none z-0'}`}>
+                        <div className="text-center p-8 w-full flex flex-col items-center justify-center">
+                            <div className="w-16 h-16 rounded-full bg-indigo-100 flex items-center justify-center mb-4 text-indigo-600">
+                                <Upload className="w-8 h-8" />
+                            </div>
+                            <h4 className="text-lg font-bold text-slate-700 mb-2">{t('uploadCodeFile')}</h4>
+                            <p className="text-sm text-slate-500 mb-6">{t('selectHtmlFile')}</p>
+                            
+                            <input 
+                              id="code-upload"
+                              type="file" 
+                              accept=".html,.htm"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                    const reader = new FileReader();
+                                    reader.onload = (ev) => {
+                                        setFormData({...formData, code: ev.target?.result as string});
+                                        setEditorMode('paste'); // Auto switch to preview/edit after upload
+                                    };
+                                    reader.readAsText(file);
+                                }
+                              }}
+                            />
+                            
+                            <button 
+                                type="button"
+                                onClick={() => document.getElementById('code-upload')?.click()}
+                                className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium shadow-sm hover:bg-indigo-700 transition-colors"
+                            >
+                                {t('selectFile')}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Paste Code Mode (Textarea) */}
+                    <textarea 
+                      value={formData.code} 
+                      onChange={e => setFormData({...formData, code: e.target.value})}
+                      className={`absolute inset-0 w-full h-full p-4 font-mono text-sm bg-slate-900 text-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none transition-all ${editorMode === 'paste' ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none z-0'}`}
+                      spellCheck={false}
+                      placeholder={t('pasteCodePlaceholder')}
+                    />
+                 </div>
+               </>
+             )}
+
+             {/* Multi File Mode */}
+             {projectMode === 'multi' && (
+               <div className="flex-1 flex flex-col gap-4">
+                 {!zipFile ? (
+                   <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 transition-all hover:border-indigo-300">
+                     <div className="text-center p-8 w-full flex flex-col items-center justify-center">
+                       <div className="w-16 h-16 rounded-full bg-indigo-100 flex items-center justify-center mb-4 text-indigo-600">
+                         <FolderOpen className="w-8 h-8" />
+                       </div>
+                       <h4 className="text-lg font-bold text-slate-700 mb-2">{t('uploadZipFile')}</h4>
+                       <p className="text-sm text-slate-500 mb-6">{t('zipFileDesc')}</p>
+                       
+                       <input 
+                         id="zip-upload"
+                         type="file" 
+                         accept=".zip"
+                         className="hidden"
+                         onChange={(e) => {
+                           const file = e.target.files?.[0];
+                           if (file) {
+                             handleZipUpload(file);
+                           }
+                         }}
+                       />
+                       
+                       <button 
+                         type="button"
+                         onClick={() => document.getElementById('zip-upload')?.click()}
+                         className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium shadow-sm hover:bg-indigo-700 transition-colors"
+                       >
+                         {t('selectZipFile')}
+                       </button>
+                     </div>
+                   </div>
+                 ) : (
+                   <div className="flex-1 flex flex-col gap-4">
+                     <div className="flex items-center justify-between p-4 bg-indigo-50 rounded-xl border border-indigo-200">
+                       <div className="flex items-center gap-3">
+                         <FolderOpen className="w-8 h-8 text-indigo-600" />
+                         <div>
+                           <p className="font-medium text-slate-800">{zipFile.name}</p>
+                           <p className="text-sm text-slate-500">{formatFileSize(zipFile.size)}</p>
+                         </div>
+                       </div>
+                       <button 
+                         onClick={() => {
+                           setZipFile(null);
+                           setProjectStructure([]);
+                           const fileInput = document.getElementById('zip-upload') as HTMLInputElement;
+                           if (fileInput) fileInput.value = '';
+                         }}
+                         className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                       >
+                         <X className="w-5 h-5" />
+                       </button>
+                     </div>
+
+                     {isAnalyzingZip ? (
+                       <div className="flex-1 flex items-center justify-center">
+                         <div className="text-center">
+                           <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4"></div>
+                           <p className="text-slate-600">{t('analyzingZip')}</p>
+                         </div>
+                       </div>
+                     ) : (
+                       <div className="flex-1 border border-slate-200 rounded-xl bg-white overflow-hidden">
+                         <div className="p-3 bg-slate-50 border-b border-slate-200">
+                           <p className="text-sm font-medium text-slate-700">{t('projectStructure')}</p>
+                         </div>
+                         <div className="p-4 max-h-[300px] overflow-y-auto">
+                           {projectStructure.length === 0 ? (
+                             <p className="text-sm text-slate-500 text-center py-8">{t('emptyZip')}</p>
+                           ) : (
+                             <div className="space-y-1">
+                               {projectStructure
+                                 .sort((a, b) => {
+                                   if (a.type === 'directory' && b.type !== 'directory') return -1;
+                                   if (a.type !== 'directory' && b.type === 'directory') return 1;
+                                   return a.path.localeCompare(b.path);
+                                 })
+                                 .map((file, index) => (
+                                   <div key={index} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg">
+                                     {file.type === 'directory' ? (
+                                       <FolderOpen className="w-4 h-4 text-indigo-400" />
+                                     ) : (
+                                       getFileIcon(file.extension)
+                                     )}
+                                     <span className="text-sm text-slate-700 flex-1 truncate">{file.path}</span>
+                                     {file.size && file.size > 0 && (
+                                       <span className="text-xs text-slate-400">{formatFileSize(file.size)}</span>
+                                     )}
+                                   </div>
+                                 ))}
+                             </div>
+                           )}
+                         </div>
+                       </div>
+                     )}
+                   </div>
+                 )}
+               </div>
+             )}
              
              <div className="mt-4 flex justify-between items-center text-sm text-slate-500">
                 <div className="flex gap-4">
@@ -371,13 +713,39 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
             <div className="h-full flex flex-col animate-in slide-in-from-right-8 duration-300">
               <label className="block text-sm font-medium text-slate-700 mb-3">{t('stepPreview')}</label>
               <div className="flex-1 min-h-[400px] border-2 border-slate-200 border-dashed rounded-xl bg-white overflow-hidden relative">
-                 <iframe 
-                   key={formData.code.length + step}
-                   srcDoc={formData.code} 
-                   className="w-full h-full absolute inset-0 border-0" 
-                   title={t('stepPreview')} 
-                   sandbox="allow-scripts allow-popups allow-modals allow-same-origin"
-                 />
+                 {projectMode === 'single' ? (
+                   <iframe 
+                     key={formData.code.length + step}
+                     srcDoc={formData.code} 
+                     className="w-full h-full absolute inset-0 border-0" 
+                     title={t('stepPreview')} 
+                     sandbox="allow-scripts allow-popups allow-modals allow-same-origin"
+                   />
+                 ) : previewContent ? (
+                   <iframe 
+                     key={previewContent.length + step}
+                     srcDoc={previewContent} 
+                     className="w-full h-full absolute inset-0 border-0" 
+                     title={t('stepPreview')} 
+                     sandbox="allow-scripts allow-popups allow-modals allow-same-origin"
+                   />
+                 ) : (
+                   <div className="flex items-center justify-center h-full bg-slate-50">
+                     <div className="text-center">
+                       <div className="w-16 h-16 rounded-full bg-indigo-100 flex items-center justify-center mb-4 text-indigo-600">
+                         <FolderOpen className="w-8 h-8" />
+                       </div>
+                       <h4 className="text-lg font-bold text-slate-700 mb-2">{t('multiFile')} {t('project')}</h4>
+                       <p className="text-sm text-slate-500 mb-4">{t('multiFilePreviewDesc')}</p>
+                       <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm max-w-md mx-auto">
+                         <p className="text-xs text-slate-600 mb-2 font-medium">{t('projectDetails')}:</p>
+                         <p className="text-xs text-slate-500 mb-1">• {t('fileName')}: {zipFile?.name || '-'}</p>
+                         <p className="text-xs text-slate-500 mb-1">• {t('fileSize')}: {zipFile ? formatFileSize(zipFile.size) : '-'}</p>
+                         <p className="text-xs text-slate-500 mb-1">• {t('fileCount')}: {projectStructure.length}</p>
+                       </div>
+                     </div>
+                   </div>
+                 )}
               </div>
               
               <div className="mt-4 p-4 bg-amber-50 rounded-xl border border-amber-200">

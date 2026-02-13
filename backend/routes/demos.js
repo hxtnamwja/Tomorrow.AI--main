@@ -1,5 +1,9 @@
 import { Router } from 'express';
 import { runQuery, getRow, getAllRows } from '../database.js';
+import multer from 'multer';
+import AdmZip from 'adm-zip';
+import path from 'path';
+import fs from 'fs';
 
 const router = Router();
 
@@ -19,7 +23,10 @@ const mapDemoRow = (row) => {
     createdAt: row.created_at,
     rejectionReason: row.rejection_reason || undefined,
     bountyId: row.bounty_id || undefined,
-    likeCount: row.like_count || 0  // Include like count from aggregation
+    likeCount: row.like_count || 0,
+    projectType: row.project_type || 'single-file',
+    entryFile: row.entry_file || undefined,
+    projectSize: row.project_size || 0
   };
 };
 
@@ -359,5 +366,278 @@ router.get('/liked/by/:userId', async (req, res) => {
     res.status(500).json({ code: 500, message: 'Server error', data: null });
   }
 });
+
+// ==================== ZIP UPLOAD ROUTES ====================
+
+// 配置multer用于文件上传
+const upload = multer({
+  dest: 'uploads/temp/',
+  limits: { 
+    fileSize: 100 * 1024 * 1024, // 100MB
+    files: 1 
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/zip' || 
+        file.mimetype === 'application/x-zip-compressed' ||
+        file.originalname.endsWith('.zip')) {
+      cb(null, true);
+    } else {
+      cb(new Error('只允许上传ZIP文件'));
+    }
+  }
+});
+
+// POST /demos/upload-zip - 上传ZIP项目
+router.post('/upload-zip', upload.single('zipFile'), async (req, res) => {
+  const { title, description, categoryId, layer, communityId } = req.body;
+  const user = await getCurrentUser(req);
+  
+  if (!user) {
+    return res.status(401).json({ code: 401, message: 'Unauthorized', data: null });
+  }
+  
+  if (!req.file) {
+    return res.status(400).json({ code: 400, message: 'No file uploaded', data: null });
+  }
+  
+  const demoId = 'demo-' + Date.now();
+  const projectDir = path.join('projects', demoId);
+  
+  try {
+    // 创建项目目录
+    fs.mkdirSync(projectDir, { recursive: true });
+    
+    // 解压ZIP文件
+    const zip = new AdmZip(req.file.path);
+    zip.extractAllTo(projectDir, true);
+    
+    // 分析项目结构
+    const projectInfo = analyzeProjectStructure(projectDir);
+    
+    if (!projectInfo.entryFiles.length) {
+      // 清理
+      fs.rmSync(projectDir, { recursive: true });
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ 
+        code: 400, 
+        message: 'ZIP中未找到HTML文件', 
+        data: null 
+      });
+    }
+    
+    // 保存到数据库
+    await runQuery(`
+      INSERT INTO demos (id, title, description, category_id, layer, community_id, 
+                       code, author, status, project_type, entry_file, project_size, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      demoId,
+      title,
+      description,
+      categoryId,
+      layer,
+      communityId || null,
+      projectInfo.entryFiles[0], // 存储入口文件相对路径
+      user.username,
+      'pending',
+      'multi-file',
+      projectInfo.entryFiles[0],
+      projectInfo.totalSize,
+      Date.now()
+    ]);
+    
+    // 清理临时文件
+    fs.unlinkSync(req.file.path);
+    
+    res.json({ 
+      code: 200, 
+      message: '上传成功', 
+      data: { 
+        id: demoId, 
+        entryFile: projectInfo.entryFiles[0],
+        structure: projectInfo.structure,
+        size: projectInfo.totalSize
+      }
+    });
+  } catch (error) {
+    console.error('Upload ZIP error:', error);
+    // 清理可能创建的文件
+    if (fs.existsSync(projectDir)) {
+      fs.rmSync(projectDir, { recursive: true });
+    }
+    if (fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ code: 500, message: '服务器错误', data: null });
+  }
+});
+
+// GET /demos/:id/structure - 获取项目结构
+router.get('/:id/structure', async (req, res) => {
+  try {
+    const demo = await getRow('SELECT * FROM demos WHERE id = ?', [req.params.id]);
+    
+    if (!demo) {
+      return res.status(404).json({ code: 404, message: 'Demo not found', data: null });
+    }
+    
+    if (demo.project_type !== 'multi-file') {
+      return res.status(400).json({ 
+        code: 400, 
+        message: '此演示不是多文件项目', 
+        data: null 
+      });
+    }
+    
+    const projectDir = path.join('projects', demo.id);
+    
+    if (!fs.existsSync(projectDir)) {
+      return res.status(404).json({ 
+        code: 404, 
+        message: '项目文件不存在', 
+        data: null 
+      });
+    }
+    
+    const projectInfo = analyzeProjectStructure(projectDir);
+    
+    res.json({ 
+      code: 200, 
+      message: 'Success', 
+      data: projectInfo 
+    });
+  } catch (error) {
+    console.error('Get project structure error:', error);
+    res.status(500).json({ code: 500, message: 'Server error', data: null });
+  }
+});
+
+// GET /demos/:id/files/:filepath - 获取项目文件内容
+router.get('/:id/files/*', async (req, res) => {
+  try {
+    const demo = await getRow('SELECT * FROM demos WHERE id = ?', [req.params.id]);
+    
+    if (!demo) {
+      return res.status(404).json({ code: 404, message: 'Demo not found', data: null });
+    }
+    
+    if (demo.project_type !== 'multi-file') {
+      return res.status(400).json({ 
+        code: 400, 
+        message: '此演示不是多文件项目', 
+        data: null 
+      });
+    }
+    
+    const filepath = req.params[0] || '';
+    const projectDir = path.join('projects', demo.id);
+    const fullPath = path.join(projectDir, filepath);
+    
+    // 安全检查
+    const normalizedPath = path.normalize(fullPath);
+    const normalizedProjectDir = path.normalize(projectDir);
+    
+    if (!normalizedPath.startsWith(normalizedProjectDir)) {
+      return res.status(403).json({ code: 403, message: '访问被拒绝', data: null });
+    }
+    
+    if (!fs.existsSync(fullPath)) {
+      return res.status(404).json({ code: 404, message: '文件不存在', data: null });
+    }
+    
+    // 读取文件内容
+    const content = fs.readFileSync(fullPath, 'utf-8');
+    const ext = path.extname(filepath).toLowerCase();
+    
+    // 根据文件类型返回
+    if (['.html', '.htm', '.css', '.js', '.json', '.txt', '.md'].includes(ext)) {
+      res.json({ 
+        code: 200, 
+        message: 'Success', 
+        data: { 
+          path: filepath,
+          content: content,
+          extension: ext
+        } 
+      });
+    } else {
+      res.status(400).json({ 
+        code: 400, 
+        message: '不支持的文件类型', 
+        data: null 
+      });
+    }
+  } catch (error) {
+    console.error('Get file content error:', error);
+    res.status(500).json({ code: 500, message: 'Server error', data: null });
+  }
+});
+
+// 辅助函数：分析项目结构
+function analyzeProjectStructure(dir) {
+  const structure = [];
+  const entryFiles = [];
+  const imageFiles = [];
+  let totalSize = 0;
+  
+  function scanDirectory(currentDir, basePath = '') {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    
+    for (const entry of entries) {
+      // 过滤掉系统隐藏文件和目录
+      if (entry.name === '__MACOSX' || entry.name.startsWith('.') || entry.name === '.DS_Store') {
+        continue;
+      }
+      
+      const relativePath = path.join(basePath, entry.name);
+      const fullPath = path.join(currentDir, entry.name);
+      
+      if (entry.isDirectory()) {
+        structure.push({
+          type: 'directory',
+          path: relativePath,
+          name: entry.name
+        });
+        scanDirectory(fullPath, relativePath);
+      } else {
+        const ext = path.extname(entry.name).toLowerCase();
+        const fileStats = fs.statSync(fullPath);
+        
+        structure.push({
+          type: 'file',
+          path: relativePath,
+          name: entry.name,
+          size: fileStats.size,
+          extension: ext
+        });
+        
+        totalSize += fileStats.size;
+        
+        // 收集HTML入口文件
+        if (ext === '.html' || ext === '.htm') {
+          entryFiles.push(relativePath);
+        }
+        
+        // 收集图片文件
+        if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'].includes(ext)) {
+          imageFiles.push({
+            path: relativePath,
+            name: entry.name,
+            size: fileStats.size
+          });
+        }
+      }
+    }
+  }
+  
+  scanDirectory(dir);
+  
+  return {
+    structure,
+    entryFiles,
+    imageFiles,
+    totalSize
+  };
+}
 
 export default router;

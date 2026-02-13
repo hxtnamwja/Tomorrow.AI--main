@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, RefreshCw, Sparkles, Heart, Maximize2, Minimize2, Smartphone, Send, RotateCcw, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Demo } from '../types';
@@ -8,10 +8,66 @@ import { AIMessageContent } from './AIMessageContent';
 
 export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange }: { demo: Demo, onClose: () => void, t: any, onOpenDemo?: (demoId: string) => void, onLikeChange?: (demoId: string, likeCount: number, userLiked: boolean) => void }) => {
   const [activeTab, setActiveTab] = useState<'concept' | 'code' | 'ai'>('concept');
-  const [iframeKey, setIframeKey] = useState(0); // to force reload
+  const [iframeKey, setIframeKey] = useState(0);
   const [aiMessages, setAiMessages] = useState<{role: 'user' | 'model', text: string}[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Check if this is a multi-file project
+  const isMultiFile = demo.projectType === 'multi-file';
+  
+  // Build preview URL for multi-file projects
+  const previewUrl = useMemo(() => {
+    if (isMultiFile && demo.entryFile) {
+      const apiBase = import.meta.env.VITE_API_URL || '/api/v1';
+      const baseUrl = apiBase.replace('/api/v1', '');
+      return `${baseUrl}/projects/${demo.id}/${demo.entryFile}`;
+    }
+    return undefined;
+  }, [demo, isMultiFile]);
+
+  // Multi-file project state
+  const [projectStructure, setProjectStructure] = useState<any[]>([]);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [fileContent, setFileContent] = useState<string>('');
+  const [loadingStructure, setLoadingStructure] = useState(false);
+
+  // Load project structure for multi-file projects
+  useEffect(() => {
+    if (isMultiFile) {
+      loadProjectStructure();
+    }
+  }, [demo.id, isMultiFile]);
+
+  const loadProjectStructure = async () => {
+    setLoadingStructure(true);
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || '/api/v1';
+      const response = await fetch(`${apiBase}/demos/${demo.id}/structure`);
+      const result = await response.json();
+      if (result.code === 200) {
+        setProjectStructure(result.data.structure || []);
+      }
+    } catch (error) {
+      console.error('Error loading project structure:', error);
+    } finally {
+      setLoadingStructure(false);
+    }
+  };
+
+  const loadFileContent = async (filepath: string) => {
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || '/api/v1';
+      const response = await fetch(`${apiBase}/demos/${demo.id}/files/${filepath}`);
+      const result = await response.json();
+      if (result.code === 200) {
+        setFileContent(result.data.content);
+        setSelectedFile(filepath);
+      }
+    } catch (error) {
+      console.error('Error loading file content:', error);
+    }
+  };
 
   // Resize State
   const [sidebarWidth, setSidebarWidth] = useState(400);
@@ -380,7 +436,8 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange }: { dem
           <div className={`flex-1 relative w-full h-full bg-white ${isFullscreen ? 'h-screen' : ''}`}>
             <iframe
               key={iframeKey}
-              srcDoc={demo.code}
+              src={previewUrl}
+              srcDoc={!isMultiFile ? demo.code : undefined}
               className={`border-0 block ${isFullscreen ? 'fixed inset-0 w-screen h-screen z-[101]' : 'w-full h-full'}`}
               title={demo.title}
               sandbox="allow-scripts allow-popups allow-modals allow-same-origin"
@@ -551,13 +608,80 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange }: { dem
 
             {activeTab === 'code' && (
               <div className="animate-in fade-in slide-in-from-right-4 duration-300 h-full flex flex-col">
-                <div className="flex items-center justify-between mb-2">
-                   <span className="text-xs font-bold text-slate-500 uppercase">index.html</span>
-                   <span className="text-xs text-slate-400">{t('readOnly')}</span>
-                </div>
-                <pre className="text-xs font-mono bg-slate-900 text-slate-300 p-4 rounded-xl overflow-x-auto flex-1 shadow-inner border border-slate-700">
-                  {demo.code}
-                </pre>
+                {isMultiFile ? (
+                  <>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-slate-500 uppercase">{t('projectStructure')}</span>
+                      <span className="text-xs text-slate-400">{t('readOnly')}</span>
+                    </div>
+                    <div className="flex-1 flex gap-4 overflow-hidden">
+                      {/* File List */}
+                      <div className="w-1/3 border border-slate-200 rounded-xl overflow-hidden flex flex-col">
+                        <div className="p-2 bg-slate-50 border-b border-slate-200">
+                          <p className="text-xs font-medium text-slate-600">Files</p>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-2">
+                          {loadingStructure ? (
+                            <div className="flex items-center justify-center py-8">
+                              <div className="w-6 h-6 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                            </div>
+                          ) : projectStructure.length === 0 ? (
+                            <p className="text-xs text-slate-400 text-center py-4">No files</p>
+                          ) : (
+                            <div className="space-y-1">
+                              {projectStructure
+                                .sort((a, b) => {
+                                  if (a.type === 'directory' && b.type !== 'directory') return -1;
+                                  if (a.type !== 'directory' && b.type === 'directory') return 1;
+                                  return a.path.localeCompare(b.path);
+                                })
+                                .map((file, index) => (
+                                  <button
+                                    key={index}
+                                    onClick={() => file.type === 'file' && loadFileContent(file.path)}
+                                    disabled={file.type === 'directory'}
+                                    className={`w-full text-left p-2 rounded-lg text-xs transition-colors ${
+                                      selectedFile === file.path
+                                        ? 'bg-indigo-100 text-indigo-700'
+                                        : 'hover:bg-slate-100 text-slate-600'
+                                    } ${file.type === 'directory' ? 'cursor-default opacity-60' : 'cursor-pointer'}`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      {file.type === 'directory' ? (
+                                        <span className="w-3 h-3 rounded-full bg-indigo-300"></span>
+                                      ) : (
+                                        <span className="w-3 h-3 rounded-full bg-slate-300"></span>
+                                      )}
+                                      <span className="truncate">{file.name}</span>
+                                    </div>
+                                  </button>
+                                ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {/* File Content */}
+                      <div className="flex-1 border border-slate-200 rounded-xl overflow-hidden flex flex-col">
+                        <div className="p-2 bg-slate-50 border-b border-slate-200">
+                          <p className="text-xs font-medium text-slate-600 truncate">{selectedFile || 'Select a file'}</p>
+                        </div>
+                        <pre className="text-xs font-mono bg-slate-900 text-slate-300 p-4 rounded-xl overflow-x-auto flex-1 shadow-inner border border-slate-700">
+                          {fileContent || '// Select a file to view its content'}
+                        </pre>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-slate-500 uppercase">index.html</span>
+                      <span className="text-xs text-slate-400">{t('readOnly')}</span>
+                    </div>
+                    <pre className="text-xs font-mono bg-slate-900 text-slate-300 p-4 rounded-xl overflow-x-auto flex-1 shadow-inner border border-slate-700">
+                      {demo.code}
+                    </pre>
+                  </>
+                )}
               </div>
             )}
 

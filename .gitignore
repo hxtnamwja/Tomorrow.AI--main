@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Project directories
+backend/projects/
+backend/uploads/
+backend/data/
+
+# Test files
+test.*

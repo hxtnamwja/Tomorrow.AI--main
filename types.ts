@@ -61,7 +61,7 @@ export interface Demo {
   layer: Layer;
   communityId?: string; // Crucial for isolating community content
   description: string;
-  code: string; // The HTML/JS source
+  code: string; // The HTML/JS source or entry file path for multi-file projects
   author: string;
   thumbnailUrl?: string; // Base64 or URL
   status: DemoStatus;
@@ -70,6 +70,9 @@ export interface Demo {
   bountyId?: string; // Optional link to a bounty task
   likeCount?: number; // Number of likes (optional, populated on demand)
   userLiked?: boolean; // Whether current user has liked this demo
+  projectType?: 'single-file' | 'multi-file'; // Project type
+  entryFile?: string; // Entry file path for multi-file projects
+  projectSize?: number; // Project total size in bytes
 }
 
 export interface ChatMessage {

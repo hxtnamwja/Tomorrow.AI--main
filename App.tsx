@@ -292,7 +292,11 @@ export default function App() {
 
   // Actions
   const handleUpload = async (newDemo: Demo) => {
-    await StorageService.saveDemo(newDemo);
+    // For multi-file projects, the demo is already created on the backend
+    // For single-file projects, we need to save it
+    if (newDemo.projectType !== 'multi-file') {
+      await StorageService.saveDemo(newDemo);
+    }
     await refreshAllData();
     setView('explore');
     setBountyContext(null);
