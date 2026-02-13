@@ -1,0 +1,229 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tomorrow</title>
+    <link rel="icon" type="image/jpeg" href="/logo.jpg" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- KaTeX CSS for math formula rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
+    <style>
+      :root {
+        --primary-glow: conic-gradient(from 180deg at 50% 50%, #2a8af6 0deg, #a853ba 180deg, #e92a67 360deg);
+      }
+      body {
+        font-family: 'Inter', 'Noto Sans SC', sans-serif;
+        background-color: #f8fafc;
+        overflow-x: hidden;
+        color: #1e293b;
+      }
+      
+      /* Premium Background Pattern */
+      .bg-grid-slate {
+        background-size: 40px 40px;
+        background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+      }
+      .dark .bg-grid-slate {
+        background-image: radial-gradient(circle, #334155 1px, transparent 1px);
+      }
+
+      /* Custom scrollbar */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+
+      /* Refined Glass Panel */
+      .glass-panel {
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.03);
+      }
+      
+      .glass-card {
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 1);
+        box-shadow: 0 10px 40px -10px rgba(0,0,0,0.05);
+      }
+      
+      .text-gradient {
+        background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      /* Markdown Content Styles */
+      .markdown-content {
+        line-height: 1.6;
+      }
+      .markdown-content h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin: 1rem 0 0.5rem 0;
+        color: #1e293b;
+      }
+      .markdown-content h2 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 0.875rem 0 0.5rem 0;
+        color: #334155;
+      }
+      .markdown-content h3 {
+        font-size: 1.125rem;
+        font-weight: 600;
+        margin: 0.75rem 0 0.375rem 0;
+        color: #475569;
+      }
+      .markdown-content p {
+        margin: 0.5rem 0;
+      }
+      .markdown-content ul, .markdown-content ol {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+      }
+      .markdown-content ul {
+        list-style-type: disc;
+      }
+      .markdown-content ol {
+        list-style-type: decimal;
+      }
+      .markdown-content li {
+        margin: 0.25rem 0;
+      }
+      .markdown-content code {
+        background: #f1f5f9;
+        padding: 0.125rem 0.375rem;
+        border-radius: 0.25rem;
+        font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+        font-size: 0.875em;
+        color: #ef4444;
+      }
+      .markdown-content pre {
+        background: #1e293b;
+        color: #e2e8f0;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        overflow-x: auto;
+        margin: 0.75rem 0;
+      }
+      .markdown-content pre code {
+        background: transparent;
+        color: inherit;
+        padding: 0;
+        font-size: 0.875rem;
+      }
+      .markdown-content blockquote {
+        border-left: 4px solid #e2e8f0;
+        padding-left: 1rem;
+        margin: 0.75rem 0;
+        color: #64748b;
+        font-style: italic;
+      }
+      .markdown-content strong {
+        font-weight: 600;
+        color: #1e293b;
+      }
+      .markdown-content em {
+        font-style: italic;
+      }
+      .markdown-content a {
+        color: #4f46e5;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+      .markdown-content a:hover {
+        color: #4338ca;
+      }
+      .markdown-content hr {
+        border: none;
+        border-top: 1px solid #e2e8f0;
+        margin: 1rem 0;
+      }
+      .markdown-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 0.75rem 0;
+      }
+      .markdown-content th, .markdown-content td {
+        border: 1px solid #e2e8f0;
+        padding: 0.5rem;
+        text-align: left;
+      }
+      .markdown-content th {
+        background: #f8fafc;
+        font-weight: 600;
+      }
+
+      /* Math formula code block styles */
+      .markdown-content code {
+        background: #f1f5f9;
+        padding: 0.2em 0.4em;
+        border-radius: 0.25em;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9em;
+        color: #334155;
+      }
+      .markdown-content pre {
+        background: #f8fafc;
+        padding: 1em;
+        border-radius: 0.5em;
+        overflow-x: auto;
+        border: 1px solid #e2e8f0;
+      }
+      .markdown-content pre code {
+        background: transparent;
+        padding: 0;
+      }
+
+      /* KaTeX Math Formula Styles */
+      .katex {
+        font-size: 1.1em;
+      }
+      .katex-display {
+        margin: 1rem 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+      }
+      .katex-display .katex {
+        font-size: 1.2em;
+      }
+      .katex, .katex .mathnormal, .katex .mathrm, .katex .mathbf {
+        color: inherit;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^1.40.0",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "framer-motion": "https://esm.sh/framer-motion@^12.31.2",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
