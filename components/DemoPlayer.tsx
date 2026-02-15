@@ -39,6 +39,112 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange }: { dem
     }
   }, [demo.id, isMultiFile]);
 
+  // 辅助函数：将扁平的文件列表转换为树状结构
+  const buildTreeStructure = (files: any[]): any[] => {
+    const root: any[] = [];
+    const pathMap: Record<string, any> = {};
+
+    // 首先创建所有目录节点
+    files.forEach(file => {
+      if (file.type === 'directory') {
+        pathMap[file.path] = {
+          ...file,
+          children: []
+        };
+      }
+    });
+
+    // 然后创建所有文件节点，并将它们添加到对应的目录中
+    files.forEach(file => {
+      if (file.type === 'file') {
+        const pathParts = file.path.split('/');
+        const dirPath = pathParts.slice(0, -1).join('/');
+
+        if (dirPath === '') {
+          // 根目录文件
+          root.push(file);
+        } else if (pathMap[dirPath]) {
+          // 子目录文件
+          if (!pathMap[dirPath].children) {
+            pathMap[dirPath].children = [];
+          }
+          pathMap[dirPath].children!.push(file);
+        }
+      }
+    });
+
+    // 最后将所有目录节点添加到对应的父目录中
+    Object.values(pathMap).forEach(dir => {
+      const pathParts = dir.path.split('/');
+      const parentPath = pathParts.slice(0, -1).join('/');
+
+      if (parentPath === '') {
+        // 根目录
+        root.push(dir);
+      } else if (pathMap[parentPath]) {
+        // 子目录
+        if (!pathMap[parentPath].children) {
+          pathMap[parentPath].children = [];
+        }
+        pathMap[parentPath].children!.push(dir);
+      }
+    });
+
+    // 排序：目录在前，文件在后，然后按名称排序
+    const sortItems = (items: any[]) => {
+      return items.sort((a, b) => {
+        if (a.type === 'directory' && b.type !== 'directory') return -1;
+        if (a.type !== 'directory' && b.type === 'directory') return 1;
+        return a.name.localeCompare(b.name);
+      });
+    };
+
+    // 递归排序所有子项
+    const sortRecursive = (items: any[]) => {
+      sortItems(items);
+      items.forEach(item => {
+        if (item.type === 'directory' && item.children) {
+          sortRecursive(item.children);
+        }
+      });
+    };
+
+    sortRecursive(root);
+    return root;
+  };
+
+  // 递归组件：显示树状结构
+  const TreeView = ({ items, level = 0 }: { items: any[], level?: number }) => {
+    return (
+      <ul className="space-y-1">
+        {items.map((item, index) => (
+          <li key={index}>
+            <button
+              onClick={() => item.type === 'file' && loadFileContent(item.path)}
+              disabled={item.type === 'directory'}
+              className={`w-full text-left p-2 rounded-lg text-xs transition-colors ${selectedFile === item.path
+                ? 'bg-indigo-100 text-indigo-700'
+                : 'hover:bg-slate-100 text-slate-600'
+                } ${item.type === 'directory' ? 'cursor-default opacity-60' : 'cursor-pointer'}`}
+            >
+              <div className="flex items-center gap-2" style={{ marginLeft: `${level * 12}px` }}>
+                {item.type === 'directory' ? (
+                  <span className="w-3 h-3 rounded-full bg-indigo-300"></span>
+                ) : (
+                  <span className="w-3 h-3 rounded-full bg-slate-300"></span>
+                )}
+                <span className="truncate">{item.name}</span>
+              </div>
+            </button>
+            {item.type === 'directory' && item.children && item.children.length > 0 && (
+              <TreeView items={item.children} level={level + 1} />
+            )}
+          </li>
+        ))}
+      </ul>
+    );
+  };
+
   const loadProjectStructure = async () => {
     setLoadingStructure(true);
     try {
@@ -628,35 +734,7 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange }: { dem
                           ) : projectStructure.length === 0 ? (
                             <p className="text-xs text-slate-400 text-center py-4">No files</p>
                           ) : (
-                            <div className="space-y-1">
-                              {projectStructure
-                                .sort((a, b) => {
-                                  if (a.type === 'directory' && b.type !== 'directory') return -1;
-                                  if (a.type !== 'directory' && b.type === 'directory') return 1;
-                                  return a.path.localeCompare(b.path);
-                                })
-                                .map((file, index) => (
-                                  <button
-                                    key={index}
-                                    onClick={() => file.type === 'file' && loadFileContent(file.path)}
-                                    disabled={file.type === 'directory'}
-                                    className={`w-full text-left p-2 rounded-lg text-xs transition-colors ${
-                                      selectedFile === file.path
-                                        ? 'bg-indigo-100 text-indigo-700'
-                                        : 'hover:bg-slate-100 text-slate-600'
-                                    } ${file.type === 'directory' ? 'cursor-default opacity-60' : 'cursor-pointer'}`}
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      {file.type === 'directory' ? (
-                                        <span className="w-3 h-3 rounded-full bg-indigo-300"></span>
-                                      ) : (
-                                        <span className="w-3 h-3 rounded-full bg-slate-300"></span>
-                                      )}
-                                      <span className="truncate">{file.name}</span>
-                                    </div>
-                                  </button>
-                                ))}
-                            </div>
+                            <TreeView items={buildTreeStructure(projectStructure)} />
                           )}
                         </div>
                       </div>
