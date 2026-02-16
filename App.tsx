@@ -6,14 +6,14 @@ import {
   ChevronRight, Globe, Users, Trash2, Folder,
   ChevronDown, Satellite, UserCircle, Briefcase, Palette, Image as ImageIcon,
   Target, Award, CheckCircle, Clock, Edit3, Save, Play, RefreshCw, Camera,
-  LogOut, LayoutDashboard, Settings, User, KeyRound, Building2, Zap, Heart,
+  LogOut, LayoutDashboard, Settings, User as UserIcon, KeyRound, Building2, Zap, Heart,
   HelpCircle, BookOpen, Menu, Send, MessageCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AiChatWidget } from './components/AiChatWidget';
 import { marked } from 'marked';
 
-import { Demo, Language, UserRole, Subject, Category, Layer, Bounty, Community } from './types';
+import { Demo, Language, UserRole, Subject, Category, Layer, Bounty, Community, User } from './types';
 import { DICTIONARY, getTranslation } from './constants';
 import { StorageService } from './services/storageService';
 import { AiService } from './services/aiService';
@@ -29,6 +29,8 @@ import { UploadWizard } from './components/UploadWizard';
 import { StatsCard } from './components/StatsCard';
 import { CreateBountyModal, CreateCategoryModal } from './components/Modals';
 import { CommunityAdminPanel } from './components/CommunityAdminPanel';
+import { UserManagementPanel } from './components/UserManagementPanel';
+import { ProfilePage } from './components/ProfilePage';
 
 import { AuthPage } from './components/AuthPage';
 
@@ -65,6 +67,7 @@ export default function App() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [bounties, setBounties] = useState<Bounty[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
 
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [selectedDemo, setSelectedDemo] = useState<Demo | null>(null);
@@ -81,6 +84,14 @@ export default function App() {
 
   // Community Admin Panel State
   const [activeCommunityAdminPanel, setActiveCommunityAdminPanel] = useState<string | null>(null);
+
+  // User Management Panel State
+  const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
+
+  // View other user's profile
+  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  // Remember if we were viewing a profile when opening a demo
+  const [wasViewingProfile, setWasViewingProfile] = useState<boolean>(false);
 
   // Context for uploading to a bounty
   const [bountyContext, setBountyContext] = useState<Bounty | null>(null);
@@ -144,15 +155,18 @@ export default function App() {
       demosData = await StorageService.getAllDemos();
     }
 
-    const [categoriesData, bountiesData, communitiesData] = await Promise.all([
+    const [categoriesData, bountiesData, communitiesData, usersData] = await Promise.all([
       StorageService.getCategories(),
       StorageService.getBounties(),
-      StorageService.getCommunities()
-    ]);
+      StorageService.getCommunities(),
+      StorageService.getAllPublicUsers ? StorageService.getAllPublicUsers() : []
+    ]).catch(() => [null, null, null, []]);
+    
     setDemos(demosData);
-    setCategories(categoriesData);
-    setBounties(bountiesData);
-    setCommunities(communitiesData);
+    setCategories(categoriesData || []);
+    setBounties(bountiesData || []);
+    setCommunities(communitiesData || []);
+    setAllUsers(usersData || []);
   };
 
 
@@ -206,6 +220,31 @@ export default function App() {
     setRole('user');
     setActiveCommunityId(null);
     setCurrentUserId('');
+  };
+
+  const handleOpenDemoWithPermission = (demo: Demo, fromProfile: boolean = false) => {
+    console.log('=== Debug handleOpenDemoWithPermission ===');
+    console.log('demo:', demo);
+    console.log('demo.layer:', demo.layer);
+    console.log('demo.communityId:', demo.communityId);
+    console.log('currentUserId:', currentUserId);
+    console.log('role:', role);
+    console.log('communities:', communities);
+    
+    if (demo.layer === 'community' && demo.communityId) {
+      const community = communities.find(c => c.id === demo.communityId);
+      console.log('community:', community);
+      const isMember = community?.members.includes(currentUserId) || false;
+      console.log('isMember:', isMember);
+      if (!isMember && role !== 'general_admin') {
+        alert('This work belongs to an internal community you are not a member of');
+        return;
+      }
+    }
+    setSelectedDemo(demo);
+    if (fromProfile) {
+      setWasViewingProfile(true);
+    }
   };
 
   // --- Derived State for Communities ---
@@ -859,16 +898,29 @@ export default function App() {
                   <p className="text-sm font-bold text-slate-700 truncate">{role === 'user' ? t('roleUser') : t('roleGeneralAdmin')}</p>
                </div>
                
+               {role === 'general_admin' && (
+                 <button 
+                    onClick={() => {
+                      setView('admin');
+                      setIsProfileMenuOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 font-medium flex items-center gap-2 transition-colors"
+                 >
+                    <LayoutDashboard className="w-4 h-4 text-purple-500" />
+                    {t('adminDashboard')}
+                 </button>
+               )}
+               
                <button 
                   onClick={() => {
-                    if (role === 'general_admin') setView('admin');
-                    else setView('profile');
+                    setViewingUserId(null);
+                    setView('profile');
                     setIsProfileMenuOpen(false);
                   }}
                   className="w-full text-left px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 font-medium flex items-center gap-2 transition-colors"
                >
-                  {role === 'general_admin' ? <LayoutDashboard className="w-4 h-4 text-purple-500" /> : <UserCircle className="w-4 h-4 text-emerald-500" />}
-                  {role === 'general_admin' ? t('adminDashboard') : t('profileTitle')}
+                  <UserCircle className="w-4 h-4 text-emerald-500" />
+                  {t('profileTitle')}
                </button>
 
                <div className="h-px bg-slate-100 my-1"></div>
@@ -906,7 +958,7 @@ export default function App() {
         >
           <div 
              className="absolute inset-0 z-0 cursor-pointer" 
-             onClick={() => setSelectedDemo(demo)}
+             onClick={() => handleOpenDemoWithPermission(demo)}
           />
 
           <div className="h-44 bg-slate-50 relative overflow-hidden pointer-events-none">
@@ -941,11 +993,26 @@ export default function App() {
             <p className="text-sm text-slate-500 mb-6 line-clamp-2 flex-1 leading-relaxed">{demo.description}</p>
 
             <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-               <div className="flex items-center gap-2.5">
+               <div 
+                 className="flex items-center gap-2.5 pointer-events-auto cursor-pointer hover:opacity-80 transition-opacity"
+                 onClick={(e) => {
+                   e.stopPropagation();
+                   if (demo.creatorId) {
+                     setViewingUserId(demo.creatorId);
+                   } else {
+                     const user = allUsers.find(u => u.username === demo.author);
+                     if (user) {
+                       setViewingUserId(user.id);
+                     }
+                   }
+                 }}
+               >
                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-[9px] text-white font-bold ring-2 ring-white">
                    {demo.author[0]?.toUpperCase()}
                  </div>
-                 <span className="text-xs font-semibold text-slate-700 truncate max-w-[100px]">{demo.author}</span>
+                 <span className="text-xs font-semibold text-slate-700 truncate max-w-[100px] hover:text-indigo-600 transition-colors">
+                   {demo.author}
+                 </span>
                </div>
                <div className="flex items-center gap-3">
                  {/* Like count */}
@@ -1186,12 +1253,21 @@ export default function App() {
 
     return (
       <div className="space-y-8 pb-20">
-         <div className="flex items-center gap-3 border-b border-slate-200 pb-6">
-             <div className="p-2 bg-purple-100 rounded-xl text-purple-600"><LayoutDashboard className="w-8 h-8" /></div>
-             <div>
-                 <h2 className="text-3xl font-bold text-slate-800">{t('adminDashboard')}</h2>
-                 <p className="text-slate-500 mt-1">{role === 'general_admin' ? t('generalAdminView') : activeCommunity?.name}</p>
+         <div className="flex items-center justify-between border-b border-slate-200 pb-6">
+             <div className="flex items-center gap-3">
+                 <div className="p-2 bg-purple-100 rounded-xl text-purple-600"><LayoutDashboard className="w-8 h-8" /></div>
+                 <div>
+                     <h2 className="text-3xl font-bold text-slate-800">{t('adminDashboard')}</h2>
+                     <p className="text-slate-500 mt-1">{role === 'general_admin' ? t('generalAdminView') : activeCommunity?.name}</p>
+                 </div>
              </div>
+             <button
+                onClick={() => setIsUserManagementOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl font-medium transition-colors"
+             >
+                 <Users className="w-4 h-4" />
+                 User Management
+             </button>
          </div>
 
          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1358,153 +1434,45 @@ export default function App() {
   };
 
   const renderProfile = () => {
+    const userId = viewingUserId || currentUserId;
+    const isViewingOther = viewingUserId !== null;
+    
+    const handleOpenCommunity = (communityId: string) => {
+      const community = communities.find(c => c.id === communityId);
+      if (community) {
+        const isMember = community.members.includes(currentUserId);
+        if (isMember || role === 'general_admin') {
+          setLayer('community');
+          setActiveCommunityId(communityId);
+          setView('explore');
+          if (isViewingOther) setViewingUserId(null);
+        } else {
+          alert('You are not a member of this community');
+        }
+      }
+    };
+    
+    const handleOpenDemo = (demo: Demo) => {
+      handleOpenDemoWithPermission(demo, true);
+    };
+    
     return (
-      <div className="max-w-4xl mx-auto space-y-8 pb-20">
-          <div className="flex items-center gap-3 border-b border-slate-200 pb-6">
-             <div className="p-2 bg-emerald-100 rounded-xl text-emerald-600"><UserCircle className="w-8 h-8" /></div>
-             <div>
-                 <h2 className="text-3xl font-bold text-slate-800">{t('profileTitle')}</h2>
-                 <p className="text-slate-500 mt-1">{t('roleUser')}: {currentUserId}</p>
-             </div>
-             <button onClick={handleLogout} className="ml-auto flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 font-bold text-sm">
-                 <LogOut className="w-4 h-4" /> {t('logout')}
-             </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('accountType')}</h4>
-                  <div className="flex items-center gap-2">
-                      <ShieldCheck className={`w-5 h-5 ${role === 'general_admin' ? 'text-purple-500' : 'text-slate-400'}`} />
-                      <span className="font-bold text-slate-700 capitalize">{role.replace('_', ' ')}</span>
-                  </div>
-              </div>
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('memberSince')}</h4>
-                  <div className="flex items-center gap-2">
-                      <Clock className="w-5 h-5 text-slate-400" />
-                      <span className="font-bold text-slate-700">Dec 2023</span>
-                  </div>
-              </div>
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{t('contributions')}</h4>
-                  <div className="flex items-center gap-2">
-                      <FlaskConical className="w-5 h-5 text-indigo-500" />
-                      <span className="font-bold text-slate-700">
-                        {demos.filter(d => d.author === currentUserId).length} Demos
-                        {demos.filter(d => d.author === currentUserId && d.status === 'pending').length > 0 && (
-                          <span className="ml-2 text-xs text-amber-600">
-                            ({demos.filter(d => d.author === currentUserId && d.status === 'pending').length} {t('pending')})
-                          </span>
-                        )}
-                      </span>
-                  </div>
-              </div>
-          </div>
-
-          {/* My Uploads Section */}
-          <div>
-              <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-bold text-slate-800">My Uploads</h3>
-              </div>
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                  {demos.filter(d => d.author === currentUserId).length === 0 ? (
-                      <div className="p-12 text-center text-slate-400">
-                          No uploads yet. Start sharing your work!
-                      </div>
-                  ) : (
-                      <div className="divide-y divide-slate-100">
-                          {demos.filter(d => d.author === currentUserId).map(demo => (
-                              <div key={demo.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
-                                  <div className="flex items-center gap-4">
-                                      <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
-                                          <SubjectIcon subject={demo.categoryId} />
-                                      </div>
-                                      <div>
-                                          <h4 className="font-bold text-slate-800">{demo.title}</h4>
-                                          <p className="text-xs text-slate-500">{new Date(demo.createdAt).toLocaleDateString()}</p>
-                                      </div>
-                                  </div>
-                                  <div className="flex items-center gap-3">
-                                      {demo.status === 'pending' && (
-                                          <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">
-                                              {t('pending')}
-                                          </span>
-                                      )}
-                                      {demo.status === 'published' && (
-                                          <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">
-                                              {t('approved')}
-                                          </span>
-                                      )}
-                                      {demo.status === 'rejected' && (
-                                          <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-bold" title={demo.rejectionReason}>
-                                              {t('rejected')}
-                                          </span>
-                                      )}
-                                      <button 
-                                          onClick={() => setSelectedDemo(demo)}
-                                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                      >
-                                          <Search className="w-4 h-4" />
-                                      </button>
-                                  </div>
-                              </div>
-                          ))}
-                      </div>
-                  )}
-              </div>
-          </div>
-
-          <div>
-              <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-bold text-slate-800">{t('myCommunities')}</h3>
-                  <button 
-                      onClick={() => setIsCreateCommModalOpen(true)}
-                      className="px-4 py-2 bg-slate-900 text-white font-bold rounded-lg hover:bg-slate-800 text-sm flex items-center gap-2 transition-all"
-                  >
-                      <Plus className="w-4 h-4" /> {t('createCommunity')}
-                  </button>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {communities.filter(c => c.members.includes(currentUserId) || c.creatorId === currentUserId).map(c => (
-                      <div key={c.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
-                          <div className="flex justify-between items-start mb-4">
-                             <div className="p-3 bg-indigo-50 rounded-xl text-indigo-600">
-                                 <Building2 className="w-6 h-6" />
-                             </div>
-                             <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${c.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                 {c.status}
-                             </span>
-                          </div>
-                          <h4 className="font-bold text-slate-800 text-lg mb-1">{c.name}</h4>
-                          <p className="text-sm text-slate-500 mb-6 flex-1">{c.description}</p>
-                          
-                          <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                              <span className="text-xs text-slate-400 font-medium">Code: <span className="font-mono bg-slate-100 px-1 rounded">{c.code}</span></span>
-                              <div className="flex -space-x-2">
-                                  {c.members.slice(0, 3).map((m, i) => (
-                                      <div key={i} className="w-6 h-6 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[8px] font-bold text-slate-500">
-                                          {m[0]}
-                                      </div>
-                                  ))}
-                                  {c.members.length > 3 && (
-                                      <div className="w-6 h-6 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[8px] font-bold text-slate-400">
-                                          +{c.members.length - 3}
-                                      </div>
-                                  )}
-                              </div>
-                          </div>
-                      </div>
-                  ))}
-                  {communities.filter(c => c.members.includes(currentUserId) || c.creatorId === currentUserId).length === 0 && (
-                      <div className="col-span-full py-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400">
-                          No communities found. Create one or join via code!
-                      </div>
-                  )}
-              </div>
-          </div>
-      </div>
+      <ProfilePage
+        userId={userId}
+        currentUserId={currentUserId}
+        currentUserRole={role}
+        t={t}
+        onBack={() => {
+          if (isViewingOther) {
+            setViewingUserId(null);
+          } else {
+            setView('explore');
+          }
+        }}
+        onOpenCommunity={handleOpenCommunity}
+        onOpenDemo={handleOpenDemo}
+        communities={communities}
+      />
     );
   };
 
@@ -1524,28 +1492,34 @@ export default function App() {
         <div className="w-full max-w-[1400px] mx-auto">
           <AnimatePresence mode="wait">
             <motion.div
-              key={view}
+              key={viewingUserId ? `view-profile-${viewingUserId}` : view}
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.4, ease: "easeOut" }}
             >
-              {view === 'explore' && renderGallery()}
-              {view === 'community_hall' && renderCommunityHall()}
-              {view === 'bounties' && renderBounties()}
-              {view === 'upload' && (
-                <UploadWizard 
-                  t={t} 
-                  categories={categories}
-                  communities={communities}
-                  currentUserId={currentUserId}
-                  onSubmit={handleUpload} 
-                  onCancel={() => setView('explore')}
-                  bountyContext={bountyContext}
-                />
+              {viewingUserId ? (
+                renderProfile()
+              ) : (
+                <>
+                  {view === 'explore' && renderGallery()}
+                  {view === 'community_hall' && renderCommunityHall()}
+                  {view === 'bounties' && renderBounties()}
+                  {view === 'upload' && (
+                    <UploadWizard 
+                      t={t} 
+                      categories={categories}
+                      communities={communities}
+                      currentUserId={currentUserId}
+                      onSubmit={handleUpload} 
+                      onCancel={() => setView('explore')}
+                      bountyContext={bountyContext}
+                    />
+                  )}
+                  {view === 'admin' && renderAdminDashboard()}
+                  {view === 'profile' && renderProfile()}
+                </>
               )}
-              {view === 'admin' && renderAdminDashboard()}
-              {view === 'profile' && renderProfile()}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -1561,6 +1535,15 @@ export default function App() {
           onDeleteCommunity={handleDeleteCommunity}
           onManageMember={handleManageMember}
           t={t}
+        />
+      )}
+
+      {/* User Management Panel Modal */}
+      {isUserManagementOpen && (
+        <UserManagementPanel
+          currentUserRole={role}
+          activeCommunity={activeCommunity}
+          onClose={() => setIsUserManagementOpen(false)}
         />
       )}
 
@@ -1651,7 +1634,7 @@ export default function App() {
           console.log('App: Looking for demo:', demoId);
           const demo = demos.find(d => d.id === demoId);
           if (demo) {
-            setSelectedDemo(demo);
+            handleOpenDemoWithPermission(demo);
           } else {
             console.error('App: Demo not found:', demoId);
             alert(`演示程序 "${demoId}" 不存在。这可能是AI产生了幻觉。请尝试其他关键词或浏览探索页面。`);
@@ -1674,7 +1657,13 @@ export default function App() {
         {selectedDemo && (
           <DemoPlayer
             demo={selectedDemo}
-            onClose={() => setSelectedDemo(null)}
+            onClose={() => {
+              setSelectedDemo(null);
+              if (!wasViewingProfile) {
+                setViewingUserId(null);
+              }
+              setWasViewingProfile(false);
+            }}
             t={t}
             onOpenDemo={(demoId) => {
               console.log('DemoPlayer onOpenDemo:', demoId);
@@ -1682,7 +1671,7 @@ export default function App() {
               const demo = demos.find(d => d.id === demoId);
               console.log('Found demo:', demo);
               if (demo) {
-                setSelectedDemo(demo);
+                handleOpenDemoWithPermission(demo);
               } else {
                 console.error('Demo not found:', demoId);
               }
@@ -1703,6 +1692,12 @@ export default function App() {
                   : prev
               );
             }}
+            onViewUserProfile={(userId) => {
+              setSelectedDemo(null);
+              setViewingUserId(userId);
+              setWasViewingProfile(false);
+            }}
+            allUsers={allUsers}
           />
         )}
       </AnimatePresence>

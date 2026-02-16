@@ -1,4 +1,4 @@
-import { Demo, Category, Bounty, Community } from '../types';
+import { Demo, Category, Bounty, Community, User, UserStats } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
@@ -347,5 +347,69 @@ export const BountiesAPI = {
     await apiRequest<void>(`/bounties/${id}`, {
       method: 'DELETE',
     });
+  },
+};
+
+// Users API
+export const UsersAPI = {
+  getAll: async (): Promise<User[]> => {
+    const result = await apiRequest<User[]>('/users');
+    return result.data;
+  },
+
+  getAllPublic: async (): Promise<User[]> => {
+    const result = await apiRequest<User[]>('/users/public');
+    return result.data;
+  },
+
+  getByCommunity: async (communityId: string): Promise<User[]> => {
+    const result = await apiRequest<User[]>(`/users/community/${communityId}`);
+    return result.data;
+  },
+
+  getById: async (id: string): Promise<User> => {
+    const result = await apiRequest<User>(`/users/${id}`);
+    return result.data;
+  },
+
+  ban: async (id: string, reason?: string): Promise<void> => {
+    await apiRequest<void>(`/users/${id}/ban`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  unban: async (id: string): Promise<void> => {
+    await apiRequest<void>(`/users/${id}/unban`, {
+      method: 'PUT',
+    });
+  },
+
+  update: async (id: string, data: {
+    username?: string;
+    password?: string;
+    contactInfo?: string;
+    paymentQr?: string;
+    bio?: string;
+  }): Promise<User> => {
+    const result = await apiRequest<User>(`/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    const storedUser = AuthAPI.getStoredUser();
+    if (storedUser && storedUser.id === id) {
+      localStorage.setItem('sci_demo_user', JSON.stringify(result.data));
+    }
+    return result.data;
+  },
+
+  getStats: async (id: string): Promise<UserStats> => {
+    const result = await apiRequest<UserStats>(`/users/${id}/stats`);
+    return result.data;
+  },
+
+  getDemos: async (id: string): Promise<Demo[]> => {
+    const result = await apiRequest<Demo[]>(`/users/${id}/demos`);
+    return result.data;
   },
 };

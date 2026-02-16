@@ -22,7 +22,13 @@ const createTables = async () => {
       id TEXT PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('user', 'general_admin')),
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      is_banned INTEGER DEFAULT 0,
+      ban_reason TEXT,
+      contact_info TEXT,
+      payment_qr TEXT,
+      bio TEXT,
+      password TEXT
     )
   `);
 
@@ -130,10 +136,10 @@ const seedData = async () => {
 
   // Insert seed users
   try {
-    await runQuery('INSERT OR IGNORE INTO users (id, username, role, created_at) VALUES (?, ?, ?, ?)', 
-      [adminId, 'admin', 'general_admin', now]);
-    await runQuery('INSERT OR IGNORE INTO users (id, username, role, created_at) VALUES (?, ?, ?, ?)', 
-      [userId, 'researcher', 'user', now]);
+    await runQuery('INSERT OR IGNORE INTO users (id, username, role, created_at, password) VALUES (?, ?, ?, ?, ?)', 
+      [adminId, 'admin', 'general_admin', now, '123456']);
+    await runQuery('INSERT OR IGNORE INTO users (id, username, role, created_at, password) VALUES (?, ?, ?, ?, ?)', 
+      [userId, 'researcher', 'user', now, '123456']);
     console.log('Seed users inserted');
   } catch (err) {
     console.log('Users already exist');

@@ -6,7 +6,7 @@ import { AiService } from '../services/aiService';
 import { DemosAPI } from '../services/apiService';
 import { AIMessageContent } from './AIMessageContent';
 
-export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange }: { demo: Demo, onClose: () => void, t: any, onOpenDemo?: (demoId: string) => void, onLikeChange?: (demoId: string, likeCount: number, userLiked: boolean) => void }) => {
+export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewUserProfile, allUsers }: { demo: Demo, onClose: () => void, t: any, onOpenDemo?: (demoId: string) => void, onLikeChange?: (demoId: string, likeCount: number, userLiked: boolean) => void, onViewUserProfile?: (userId: string) => void, allUsers?: any[] }) => {
   const [activeTab, setActiveTab] = useState<'concept' | 'code' | 'ai'>('concept');
   const [iframeKey, setIframeKey] = useState(0);
   const [aiMessages, setAiMessages] = useState<{role: 'user' | 'model', text: string}[]>([]);
@@ -692,7 +692,28 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange }: { dem
                      <span className="bg-white border border-slate-200 px-2 py-0.5 rounded font-medium text-indigo-600">
                        {demo.layer === 'general' ? demo.categoryId : t('communityRoot')}
                      </span>
-                     <span>{t('by')} {demo.author}</span>
+                     <span>
+                       {t('by')}{' '}
+                       {onViewUserProfile ? (
+                         <button 
+                           onClick={() => {
+                             if (demo.creatorId) {
+                               onViewUserProfile(demo.creatorId);
+                             } else if (allUsers) {
+                               const user = allUsers.find(u => u.username === demo.author);
+                               if (user) {
+                                 onViewUserProfile(user.id);
+                               }
+                             }
+                           }}
+                           className="text-indigo-600 hover:text-indigo-800 font-medium hover:underline transition-colors"
+                         >
+                           {demo.author}
+                         </button>
+                       ) : (
+                         <span>{demo.author}</span>
+                       )}
+                     </span>
                      <span>• {new Date(demo.createdAt).toLocaleDateString()}</span>
                    </div>
                  </div>

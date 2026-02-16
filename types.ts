@@ -63,6 +63,7 @@ export interface Demo {
   description: string;
   code: string; // The HTML/JS source or entry file path for multi-file projects
   author: string;
+  creatorId?: string; // User ID of the creator
   thumbnailUrl?: string; // Base64 or URL
   status: DemoStatus;
   createdAt: number;
@@ -73,6 +74,25 @@ export interface Demo {
   projectType?: 'single-file' | 'multi-file'; // Project type
   entryFile?: string; // Entry file path for multi-file projects
   projectSize?: number; // Project total size in bytes
+}
+
+export interface User {
+  id: string;
+  username: string;
+  role: UserRole;
+  createdAt: number;
+  isBanned: number;
+  banReason?: string;
+  contactInfo?: string;
+  paymentQr?: string;
+  bio?: string;
+}
+
+export interface UserStats {
+  demosCount: number;
+  communitiesCount: number;
+  communitiesManaged: Community[];
+  likedDemos: Demo[];
 }
 
 export interface ChatMessage {

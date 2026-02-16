@@ -18,6 +18,7 @@ const mapDemoRow = (row) => {
     communityId: row.community_id || undefined,
     code: row.code,
     author: row.author,
+    creatorId: row.creator_id || undefined,
     thumbnailUrl: row.thumbnail_url || undefined,
     status: row.status,
     createdAt: row.created_at,
@@ -137,15 +138,16 @@ router.post('/', async (req, res) => {
   const user = await getCurrentUser(req);
   // Always use the current logged-in user's username as author
   const resolvedAuthor = user ? user.username : 'Anonymous';
+  const creatorId = user ? user.id : null;
   
   const id = 'demo-' + Date.now();
   const now = Date.now();
   
   try {
     await runQuery(`
-      INSERT INTO demos (id, title, description, category_id, layer, community_id, code, author, status, bounty_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [id, title, description, categoryId, layer, communityId || null, code, resolvedAuthor, 'pending', bountyId || null, now]);
+      INSERT INTO demos (id, title, description, category_id, layer, community_id, code, author, creator_id, status, bounty_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [id, title, description, categoryId, layer, communityId || null, code, resolvedAuthor, creatorId, 'pending', bountyId || null, now]);
     
     const demo = await getRow('SELECT * FROM demos WHERE id = ?', [id]);
     res.json({ code: 200, message: 'Success', data: mapDemoRow(demo) });
@@ -428,8 +430,8 @@ router.post('/upload-zip', upload.single('zipFile'), async (req, res) => {
     // 保存到数据库
     await runQuery(`
       INSERT INTO demos (id, title, description, category_id, layer, community_id, 
-                       code, author, status, project_type, entry_file, project_size, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       code, author, creator_id, status, project_type, entry_file, project_size, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       demoId,
       title,
@@ -439,6 +441,7 @@ router.post('/upload-zip', upload.single('zipFile'), async (req, res) => {
       communityId || null,
       projectInfo.entryFiles[0], // 存储入口文件相对路径
       user.username,
+      user.id,
       'pending',
       'multi-file',
       projectInfo.entryFiles[0],

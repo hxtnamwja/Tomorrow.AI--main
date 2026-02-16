@@ -1,10 +1,11 @@
-import { Demo, Category, Bounty, Community } from '../types';
+import { Demo, Category, Bounty, Community, User, UserStats } from '../types';
 import { 
   DemosAPI, 
   CommunitiesAPI, 
   CategoriesAPI, 
   BountiesAPI,
-  AuthAPI 
+  AuthAPI,
+  UsersAPI 
 } from './apiService';
 
 // Seed data for initial setup
@@ -318,5 +319,78 @@ export const StorageService = {
 
   deleteBounty: async (id: string) => {
     await BountiesAPI.delete(id);
+  },
+
+  // --- Users ---
+  getAllUsers: async (): Promise<User[]> => {
+    try {
+      return await UsersAPI.getAll();
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      return [];
+    }
+  },
+
+  getAllPublicUsers: async (): Promise<User[]> => {
+    try {
+      return await UsersAPI.getAllPublic();
+    } catch (error) {
+      console.error('Error fetching public users:', error);
+      return [];
+    }
+  },
+
+  getUsersByCommunity: async (communityId: string): Promise<User[]> => {
+    try {
+      return await UsersAPI.getByCommunity(communityId);
+    } catch (error) {
+      console.error('Error fetching community users:', error);
+      return [];
+    }
+  },
+
+  getUserById: async (id: string): Promise<User | null> => {
+    try {
+      return await UsersAPI.getById(id);
+    } catch (error) {
+      console.error('Error fetching user:', error);
+      return null;
+    }
+  },
+
+  banUser: async (id: string, reason?: string) => {
+    await UsersAPI.ban(id, reason);
+  },
+
+  unbanUser: async (id: string) => {
+    await UsersAPI.unban(id);
+  },
+
+  updateUser: async (id: string, data: {
+    username?: string;
+    password?: string;
+    contactInfo?: string;
+    paymentQr?: string;
+    bio?: string;
+  }): Promise<User> => {
+    return await UsersAPI.update(id, data);
+  },
+
+  getUserStats: async (id: string): Promise<UserStats | null> => {
+    try {
+      return await UsersAPI.getStats(id);
+    } catch (error) {
+      console.error('Error fetching user stats:', error);
+      return null;
+    }
+  },
+
+  getUserDemos: async (id: string): Promise<Demo[]> => {
+    try {
+      return await UsersAPI.getDemos(id);
+    } catch (error) {
+      console.error('Error fetching user demos:', error);
+      return [];
+    }
   },
 };
