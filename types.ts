@@ -115,3 +115,23 @@ export interface DemoPublication {
   reviewedBy?: string;
   reviewedAt?: number;
 }
+
+export type FeedbackType = 'demo_complaint' | 'community_feedback' | 'website_feedback';
+
+export interface Feedback {
+  id: string;
+  type: FeedbackType;
+  title: string;
+  content: string;
+  layer: Layer;
+  communityId?: string;
+  demoId?: string;
+  demoTitle?: string;
+  communityName?: string;
+  status: 'pending' | 'in_progress' | 'resolved' | 'dismissed';
+  resolution?: string;
+  createdBy: string;
+  createdAt: number;
+  reviewedBy?: string;
+  reviewedAt?: number;
+}

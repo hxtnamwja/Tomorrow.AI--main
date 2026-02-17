@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { initDatabase } from './database.js';
+import { initDatabase, getDatabase } from './database.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -14,6 +14,7 @@ import bountyRoutes from './routes/bounties.js';
 import aiRoutes from './routes/ai.js';
 import usersRoutes from './routes/users.js';
 import publicationsRoutes from './routes/publications.js';
+import feedbackRoutes from './routes/feedback.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -112,6 +113,7 @@ app.use('/api/v1/bounties', bountyRoutes);
 app.use('/api/v1/ai', aiRoutes);
 app.use('/api/v1/users', usersRoutes);
 app.use('/api/v1/publications', publicationsRoutes);
+app.use('/api/v1/feedback', feedbackRoutes);
 
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {

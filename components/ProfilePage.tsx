@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { User, UserRole, User as UserType, Community, Demo } from '../types';
-import { UserCircle, ShieldCheck, Edit3, Save, X, Mail, QrCode, BookOpen, Building2, Heart, Image as ImageIcon } from 'lucide-react';
+import { UserRole, User as UserType, Community, Demo, Feedback } from '../types';
+import { UserCircle, ShieldCheck, Edit3, Save, X, Mail, QrCode, BookOpen, Building2, Heart, Image as ImageIcon, MessageSquare } from 'lucide-react';
 import { StorageService } from '../services/storageService';
+import { FeedbackAPI } from '../services/apiService';
+import FeedbackList from './FeedbackList';
 
 interface ProfilePageProps {
   userId: string;
@@ -27,6 +29,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [user, setUser] = useState<UserType | null>(null);
   const [stats, setStats] = useState<any>(null);
   const [userDemos, setUserDemos] = useState<Demo[]>([]);
+  const [userFeedbacks, setUserFeedbacks] = useState<Feedback[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -58,14 +61,23 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const loadData = async () => {
     setLoading(true);
     try {
-      const [userData, statsData, demosData] = await Promise.all([
-        StorageService.getUserById(userId),
-        StorageService.getUserStats(userId),
-        StorageService.getUserDemos(userId)
-      ]);
+      const userData = await StorageService.getUserById(userId);
+      const statsData = await StorageService.getUserStats(userId);
+      const demosData = await StorageService.getUserDemos(userId);
+      
       setUser(userData);
       setStats(statsData);
       setUserDemos(demosData);
+      
+      if (isOwnProfile) {
+        try {
+          const feedbacksData = await FeedbackAPI.getMy();
+          setUserFeedbacks(feedbacksData);
+        } catch (error) {
+          console.error('Failed to load feedback:', error);
+        }
+      }
+      
       if (userData && isOwnProfile) {
         setEditForm({
           username: userData.username,
@@ -433,6 +445,20 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               );
             })}
           </div>
+        </div>
+      )}
+
+      {isOwnProfile && (
+        <div className="mt-6 glass-card rounded-2xl p-6">
+          <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <MessageSquare className="w-5 h-5" />
+            我的反馈/投诉记录
+          </h2>
+          <FeedbackList
+            feedback={userFeedbacks}
+            isAdmin={false}
+            currentUserRole={currentUserRole}
+          />
         </div>
       )}
     </div>

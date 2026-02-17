@@ -7,17 +7,17 @@ import {
   ChevronDown, Satellite, UserCircle, Briefcase, Palette, Image as ImageIcon,
   Target, Award, CheckCircle, Clock, Edit3, Save, Play, RefreshCw, Camera,
   LogOut, LayoutDashboard, Settings, User as UserIcon, KeyRound, Building2, Zap, Heart,
-  HelpCircle, BookOpen, Menu, Send, MessageCircle, Repeat
+  HelpCircle, BookOpen, Menu, Send, MessageCircle, Repeat, MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AiChatWidget } from './components/AiChatWidget';
 import { marked } from 'marked';
 
-import { Demo, Language, UserRole, Subject, Category, Layer, Bounty, Community, User, DemoPublication } from './types';
+import { Demo, Language, UserRole, Subject, Category, Layer, Bounty, Community, User, DemoPublication, Feedback } from './types';
 import { DICTIONARY, getTranslation } from './constants';
 import { StorageService } from './services/storageService';
 import { AiService } from './services/aiService';
-import { PublicationsAPI } from './services/apiService';
+import { PublicationsAPI, FeedbackAPI } from './services/apiService';
 
 
 
@@ -32,6 +32,8 @@ import { CreateBountyModal, CreateCategoryModal, PublishToCommunityModal, Public
 import { CommunityAdminPanel } from './components/CommunityAdminPanel';
 import { UserManagementPanel } from './components/UserManagementPanel';
 import { ProfilePage } from './components/ProfilePage';
+import FeedbackModal from './components/FeedbackModal';
+import FeedbackList from './components/FeedbackList';
 
 import { AuthPage } from './components/AuthPage';
 
@@ -126,6 +128,20 @@ export default function App() {
   
   // Community search state
   const [communitySearch, setCommunitySearch] = useState('');
+  
+  // Feedback states
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [feedbackModalData, setFeedbackModalData] = useState<{
+    type: 'demo_complaint' | 'community_feedback' | 'website_feedback';
+    layer: Layer;
+    communityId?: string;
+    demoId?: string;
+    demoTitle?: string;
+    communityName?: string;
+  } | null>(null);
+  const [myFeedback, setMyFeedback] = useState<Feedback[]>([]);
+  const [pendingFeedback, setPendingFeedback] = useState<Feedback[]>([]);
+  const [viewingFeedback, setViewingFeedback] = useState<'my' | 'pending' | null>(null);
 
   const t = (key: keyof typeof DICTIONARY['en']) => getTranslation(language, key);
 
@@ -185,6 +201,21 @@ export default function App() {
         console.error('Failed to load publications:', err);
       }
     }
+    
+    // Load feedback data
+    if (isLoggedIn) {
+      try {
+        const myFb = await FeedbackAPI.getMy();
+        setMyFeedback(myFb);
+        
+        if (role === 'general_admin' || myCommunities.some(c => c.creatorId === currentUserId)) {
+          const pendingFb = await FeedbackAPI.getPending();
+          setPendingFeedback(pendingFb);
+        }
+      } catch (err) {
+        console.error('Failed to load feedback:', err);
+      }
+    }
   };
 
   const handlePublishToCommunity = async (layer: string, categoryId: string, communityId?: string) => {
@@ -224,6 +255,22 @@ export default function App() {
       console.error('Failed to reject publication:', err);
       alert('拒绝失败');
     }
+  };
+
+  const handleOpenFeedback = (
+    type: 'demo_complaint' | 'community_feedback' | 'website_feedback',
+    layer: Layer,
+    communityId?: string,
+    demoId?: string,
+    demoTitle?: string,
+    communityName?: string
+  ) => {
+    setFeedbackModalData({ type, layer, communityId, demoId, demoTitle, communityName });
+    setIsFeedbackModalOpen(true);
+  };
+
+  const handleFeedbackSuccess = async () => {
+    await refreshAllData();
   };
 
 
@@ -670,6 +717,17 @@ export default function App() {
                         <div className="text-xs text-slate-400 italic px-3 py-2">{t('noCommunities')}</div>
                     )}
                 </div>
+
+                {/* Community Feedback Button - Only show when specific community is selected */}
+                {activeCommunity && activeCommunityId && (
+                    <button
+                        onClick={() => handleOpenFeedback('community_feedback', 'community', activeCommunityId, undefined, undefined, activeCommunity.name)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-700 hover:bg-amber-100 transition-colors"
+                    >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        社区反馈
+                    </button>
+                )}
             </div>
         )}
       </div>
@@ -917,6 +975,16 @@ export default function App() {
         )}
 
         <div className="h-8 w-px bg-slate-200 mx-1 shrink-0"></div>
+
+        {/* Website Feedback Button */}
+        <button
+          onClick={() => handleOpenFeedback('website_feedback', 'general')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border border-blue-200 hover:shadow-md transition-all shrink-0"
+          title="提交网站反馈"
+        >
+          <MessageSquare className="w-4 h-4" />
+          <span className="hidden sm:inline">反馈</span>
+        </button>
 
         {/* Help Guide Button */}
         <div className="relative shrink-0">
@@ -1431,6 +1499,23 @@ export default function App() {
              </div>
          )}
          
+         {/* Feedback Management */}
+         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-blue-500" /> 反馈/投诉处理
+                </h3>
+                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-bold">{pendingFeedback.length}</span>
+            </div>
+            
+            <FeedbackList
+              feedback={pendingFeedback}
+              isAdmin={true}
+              currentUserRole={role}
+              onUpdate={refreshAllData}
+            />
+         </div>
+
          {/* Pending Demos */}
          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
@@ -1872,9 +1957,37 @@ export default function App() {
             }}
             allUsers={allUsers}
             onPublishToOther={selectedDemo.creatorId === currentUserId ? () => setIsPublishModalOpen(true) : undefined}
+            onReportDemo={() => {
+              handleOpenFeedback(
+                'demo_complaint',
+                selectedDemo.layer,
+                selectedDemo.communityId,
+                selectedDemo.id,
+                selectedDemo.title,
+                selectedDemo.communityId ? communities.find(c => c.id === selectedDemo.communityId)?.name : undefined
+              );
+            }}
           />
         )}
       </AnimatePresence>
+      
+      {/* Feedback Modal */}
+      {feedbackModalData && (
+        <FeedbackModal
+          isOpen={isFeedbackModalOpen}
+          onClose={() => {
+            setIsFeedbackModalOpen(false);
+            setFeedbackModalData(null);
+          }}
+          type={feedbackModalData.type}
+          layer={feedbackModalData.layer}
+          communityId={feedbackModalData.communityId}
+          demoId={feedbackModalData.demoId}
+          demoTitle={feedbackModalData.demoTitle}
+          communityName={feedbackModalData.communityName}
+          onSuccess={handleFeedbackSuccess}
+        />
+      )}
 
       {/* Footer - appears when scrolled to bottom */}
       <footer className="py-6 px-4 md:pl-80 w-full">

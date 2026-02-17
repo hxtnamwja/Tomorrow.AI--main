@@ -1,4 +1,4 @@
-import { Demo, Category, Bounty, Community, User, UserStats, DemoPublication } from '../types';
+import { Demo, Category, Bounty, Community, User, UserStats, DemoPublication, Feedback } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
@@ -467,5 +467,46 @@ export const PublicationsAPI = {
 
   reject: async (id: string, reason: string): Promise<DemoPublication> => {
     return await PublicationsAPI.updateStatus(id, 'rejected', reason);
+  },
+};
+
+export const FeedbackAPI = {
+  create: async (data: {
+    type: string;
+    title: string;
+    content: string;
+    layer: string;
+    communityId?: string;
+    demoId?: string;
+    demoTitle?: string;
+    communityName?: string;
+  }): Promise<Feedback> => {
+    const result = await apiRequest<Feedback>('/feedback', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return result.data;
+  },
+
+  getMy: async (): Promise<Feedback[]> => {
+    const result = await apiRequest<Feedback[]>('/feedback/my');
+    return result.data;
+  },
+
+  getPending: async (): Promise<Feedback[]> => {
+    const result = await apiRequest<Feedback[]>('/feedback/pending');
+    return result.data;
+  },
+
+  updateStatus: async (
+    id: string,
+    status: string,
+    resolution?: string
+  ): Promise<Feedback> => {
+    const result = await apiRequest<Feedback>(`/feedback/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, resolution }),
+    });
+    return result.data;
   },
 };

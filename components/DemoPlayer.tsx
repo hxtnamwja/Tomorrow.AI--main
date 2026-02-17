@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, RefreshCw, Sparkles, Heart, Maximize2, Minimize2, Smartphone, Send, RotateCcw, Trash2, FolderOpen } from 'lucide-react';
+import { X, RefreshCw, Sparkles, Heart, Maximize2, Minimize2, Smartphone, Send, RotateCcw, Trash2, FolderOpen, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Demo } from '../types';
 import { AiService } from '../services/aiService';
 import { DemosAPI } from '../services/apiService';
 import { AIMessageContent } from './AIMessageContent';
 
-export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewUserProfile, allUsers, onPublishToOther }: { demo: Demo, onClose: () => void, t: any, onOpenDemo?: (demoId: string) => void, onLikeChange?: (demoId: string, likeCount: number, userLiked: boolean) => void, onViewUserProfile?: (userId: string) => void, allUsers?: any[], onPublishToOther?: () => void }) => {
+export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewUserProfile, allUsers, onPublishToOther, onReportDemo }: { demo: Demo, onClose: () => void, t: any, onOpenDemo?: (demoId: string) => void, onLikeChange?: (demoId: string, likeCount: number, userLiked: boolean) => void, onViewUserProfile?: (userId: string) => void, allUsers?: any[], onPublishToOther?: () => void, onReportDemo?: () => void }) => {
   const [activeTab, setActiveTab] = useState<'concept' | 'code' | 'ai'>('concept');
   const [iframeKey, setIframeKey] = useState(0);
   const [aiMessages, setAiMessages] = useState<{role: 'user' | 'model', text: string}[]>([]);
@@ -771,6 +771,16 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
                    >
                      <FolderOpen className="w-4 h-4" />
                      发布到其他平台
+                   </button>
+                 )}
+                 
+                 {onReportDemo && (
+                   <button
+                     onClick={onReportDemo}
+                     className="w-full py-2 px-4 bg-white border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-all flex items-center justify-center gap-2 shadow-sm mt-3"
+                   >
+                     <AlertTriangle className="w-4 h-4" />
+                     投诉此演示
                    </button>
                  )}
                  
