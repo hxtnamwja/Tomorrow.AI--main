@@ -7,16 +7,17 @@ import {
   ChevronDown, Satellite, UserCircle, Briefcase, Palette, Image as ImageIcon,
   Target, Award, CheckCircle, Clock, Edit3, Save, Play, RefreshCw, Camera,
   LogOut, LayoutDashboard, Settings, User as UserIcon, KeyRound, Building2, Zap, Heart,
-  HelpCircle, BookOpen, Menu, Send, MessageCircle
+  HelpCircle, BookOpen, Menu, Send, MessageCircle, Repeat
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AiChatWidget } from './components/AiChatWidget';
 import { marked } from 'marked';
 
-import { Demo, Language, UserRole, Subject, Category, Layer, Bounty, Community, User } from './types';
+import { Demo, Language, UserRole, Subject, Category, Layer, Bounty, Community, User, DemoPublication } from './types';
 import { DICTIONARY, getTranslation } from './constants';
 import { StorageService } from './services/storageService';
 import { AiService } from './services/aiService';
+import { PublicationsAPI } from './services/apiService';
 
 
 
@@ -27,7 +28,7 @@ import { CategoryTreeNode } from './components/CategoryTreeNode';
 import { DemoPlayer } from './components/DemoPlayer';
 import { UploadWizard } from './components/UploadWizard';
 import { StatsCard } from './components/StatsCard';
-import { CreateBountyModal, CreateCategoryModal } from './components/Modals';
+import { CreateBountyModal, CreateCategoryModal, PublishToCommunityModal, PublicationReviewPanel } from './components/Modals';
 import { CommunityAdminPanel } from './components/CommunityAdminPanel';
 import { UserManagementPanel } from './components/UserManagementPanel';
 import { ProfilePage } from './components/ProfilePage';
@@ -118,6 +119,13 @@ export default function App() {
 
   // Mobile sidebar toggle state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  
+  // Publication feature states
+  const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
+  const [publications, setPublications] = useState<DemoPublication[]>([]);
+  
+  // Community search state
+  const [communitySearch, setCommunitySearch] = useState('');
 
   const t = (key: keyof typeof DICTIONARY['en']) => getTranslation(language, key);
 
@@ -167,6 +175,55 @@ export default function App() {
     setBounties(bountiesData || []);
     setCommunities(communitiesData || []);
     setAllUsers(usersData || []);
+    
+    // Load pending publications if user is admin
+    if (isLoggedIn && (role === 'general_admin' || myCommunities.some(c => c.creatorId === currentUserId))) {
+      try {
+        const pubs = await PublicationsAPI.getPending();
+        setPublications(pubs);
+      } catch (err) {
+        console.error('Failed to load publications:', err);
+      }
+    }
+  };
+
+  const handlePublishToCommunity = async (layer: string, categoryId: string, communityId?: string) => {
+    if (!selectedDemo) return;
+    try {
+      await PublicationsAPI.create({
+        demoId: selectedDemo.id,
+        layer: layer as 'general' | 'community',
+        categoryId,
+        communityId
+      });
+      alert('发布申请已提交，请等待审批');
+      await refreshAllData();
+    } catch (err) {
+      console.error('Failed to create publication request:', err);
+      alert('提交发布申请失败');
+    }
+  };
+
+  const handleApprovePublication = async (id: string) => {
+    try {
+      await PublicationsAPI.approve(id);
+      alert('发布已批准');
+      await refreshAllData();
+    } catch (err) {
+      console.error('Failed to approve publication:', err);
+      alert('批准失败');
+    }
+  };
+
+  const handleRejectPublication = async (id: string, reason: string) => {
+    try {
+      await PublicationsAPI.reject(id, reason);
+      alert('发布已拒绝');
+      await refreshAllData();
+    } catch (err) {
+      console.error('Failed to reject publication:', err);
+      alert('拒绝失败');
+    }
   };
 
 
@@ -181,6 +238,13 @@ export default function App() {
       refreshAllData();
     }
   }, [sortBy]);
+
+  // Clear community search when leaving community hall
+  useEffect(() => {
+    if (view !== 'community_hall') {
+      setCommunitySearch('');
+    }
+  }, [view]);
 
   const handleLogin = async (username: string, role: UserRole, isRegister?: boolean, password?: string) => {
     try {
@@ -262,6 +326,17 @@ export default function App() {
       if(!activeCommunity) return false;
       return activeCommunity.creatorId === currentUserId;
   }, [role, activeCommunity, currentUserId]);
+
+  // Filter communities for search
+  const filteredCommunities = useMemo(() => {
+      const approvedCommunities = communities.filter(c => c.status === 'approved');
+      if (!communitySearch.trim()) return approvedCommunities;
+      const searchLower = communitySearch.toLowerCase();
+      return approvedCommunities.filter(c => 
+          c.name.toLowerCase().includes(searchLower) || 
+          c.description.toLowerCase().includes(searchLower)
+      );
+  }, [communities, communitySearch]);
 
   // --- Filtering Logic ---
 
@@ -911,6 +986,8 @@ export default function App() {
                  </button>
                )}
                
+
+               
                <button 
                   onClick={() => {
                     setViewingUserId(null);
@@ -1069,11 +1146,9 @@ export default function App() {
   );
 
   const renderCommunityHall = () => {
-      const approvedCommunities = communities.filter(c => c.status === 'approved');
-      
       return (
           <div className="space-y-8 pb-20">
-              <div className="flex justify-between items-end mb-8 border-b border-slate-200 pb-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 border-b border-slate-200 pb-6 gap-4">
                 <div>
                     <h2 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
                         <div className="p-2 bg-indigo-100 rounded-xl text-indigo-600"><Building2 className="w-8 h-8" /></div>
@@ -1081,16 +1156,38 @@ export default function App() {
                     </h2>
                     <p className="text-slate-500 mt-2 text-lg">Join specialized research groups or create your own.</p>
                 </div>
-                <button 
-                    onClick={() => setIsJoinCodeModalOpen(true)}
-                    className="px-6 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold hover:border-indigo-300 hover:text-indigo-600 hover:shadow-lg transition-all flex items-center gap-2 shadow-sm"
-                >
-                    <KeyRound className="w-4 h-4" /> {t('joinByCode')}
-                </button>
+                <div className="flex gap-3">
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                            type="text"
+                            placeholder="搜索社区..."
+                            value={communitySearch}
+                            onChange={(e) => setCommunitySearch(e.target.value)}
+                            className="pl-10 pr-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 w-64"
+                        />
+                    </div>
+                    <button 
+                        onClick={() => setIsJoinCodeModalOpen(true)}
+                        className="px-6 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold hover:border-indigo-300 hover:text-indigo-600 hover:shadow-lg transition-all flex items-center gap-2 shadow-sm"
+                    >
+                        <KeyRound className="w-4 h-4" /> {t('joinByCode')}
+                    </button>
+                </div>
               </div>
 
+              {filteredCommunities.length === 0 && (
+                  <div className="text-center py-20 bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                      <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
+                          <Search className="w-8 h-8" />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-600">没有找到匹配的社区</h3>
+                      <p className="text-slate-500 mt-2">尝试其他搜索词</p>
+                  </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                  {approvedCommunities.map(c => {
+                  {filteredCommunities.map(c => {
                       const isMember = c.members.includes(currentUserId);
                       const isPending = c.pendingMembers.includes(currentUserId);
                       const isCommunityAdmin = c.creatorId === currentUserId;
@@ -1270,8 +1367,9 @@ export default function App() {
              </button>
          </div>
 
-         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
              <StatsCard label={t('statsPending')} value={pendingDemos.length} color="bg-orange-500 text-orange-500" />
+             <StatsCard label="发布审批" value={publications.length} color="bg-amber-500 text-amber-500" />
              {role === 'general_admin' && (
                  <StatsCard label="Pending Communities" value={pendingComms.length} color="bg-blue-500 text-blue-500" />
              )}
@@ -1396,6 +1494,71 @@ export default function App() {
                 </div>
             )}
          </div>
+
+         {/* Publication Approvals */}
+         {publications.length > 0 && (
+             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                    <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                        <Repeat className="w-5 h-5 text-amber-500" /> 发布审批
+                    </h3>
+                    <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-xs font-bold">{publications.length}</span>
+                </div>
+                
+                <div className="divide-y divide-slate-100">
+                    {publications.map(pub => {
+                        const demo = demos.find(d => d.id === pub.demoId);
+                        const category = categories.find(c => c.id === pub.categoryId);
+                        const community = pub.communityId ? communities.find(c => c.id === pub.communityId) : null;
+                        
+                        return (
+                            <div key={pub.id} className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${pub.layer === 'general' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                            {pub.layer === 'general' ? '通用知识库' : '社区'}
+                                        </span>
+                                        {community && (
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">
+                                                {community.name}
+                                            </span>
+                                        )}
+                                        <span className="text-xs text-slate-400">{new Date(pub.requestedAt).toLocaleDateString()}</span>
+                                    </div>
+                                    <h4 className="font-bold text-slate-800 text-lg">{demo?.title || 'Unknown Demo'}</h4>
+                                    <p className="text-sm text-slate-500 mb-2">
+                                        发布到: {category?.name || 'Unknown Category'}
+                                    </p>
+                                </div>
+                                
+                                <div className="flex items-center gap-3 shrink-0">
+                                    <button 
+                                        onClick={() => demo && setSelectedDemo(demo)}
+                                        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                        title="预览作品"
+                                    >
+                                        <Search className="w-5 h-5" />
+                                    </button>
+                                    <div className="h-8 w-px bg-slate-200"></div>
+                                    <button 
+                                        onClick={() => handleRejectPublication(pub.id, '不符合要求')}
+                                        className="px-4 py-2 border border-red-200 text-red-600 font-bold rounded-lg hover:bg-red-50 text-sm transition-colors"
+                                    >
+                                        拒绝
+                                    </button>
+                                    <button 
+                                        onClick={() => handleApprovePublication(pub.id)}
+                                        className="px-4 py-2 bg-emerald-500 text-white font-bold rounded-lg hover:bg-emerald-600 shadow-sm shadow-emerald-200 text-sm transition-colors"
+                                    >
+                                        批准
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+             </div>
+         )}
 
          {/* Members List (Community Only) */}
          {isCurrentCommunityAdmin && activeCommunity && (
@@ -1562,6 +1725,16 @@ export default function App() {
         onSubmit={handleAddCategory}
         t={t}
       />
+
+      <PublishToCommunityModal
+        isOpen={isPublishModalOpen}
+        onClose={() => setIsPublishModalOpen(false)}
+        onSubmit={handlePublishToCommunity}
+        demo={selectedDemo}
+        communities={communities}
+        categories={categories}
+        userCommunities={myCommunities}
+      />
       
       {/* Join By Code Modal */}
       {isJoinCodeModalOpen && (
@@ -1698,6 +1871,7 @@ export default function App() {
               setWasViewingProfile(false);
             }}
             allUsers={allUsers}
+            onPublishToOther={selectedDemo.creatorId === currentUserId ? () => setIsPublishModalOpen(true) : undefined}
           />
         )}
       </AnimatePresence>

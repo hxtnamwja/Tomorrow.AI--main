@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, RefreshCw, Sparkles, Heart, Maximize2, Minimize2, Smartphone, Send, RotateCcw, Trash2 } from 'lucide-react';
+import { X, RefreshCw, Sparkles, Heart, Maximize2, Minimize2, Smartphone, Send, RotateCcw, Trash2, FolderOpen } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Demo } from '../types';
 import { AiService } from '../services/aiService';
 import { DemosAPI } from '../services/apiService';
 import { AIMessageContent } from './AIMessageContent';
 
-export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewUserProfile, allUsers }: { demo: Demo, onClose: () => void, t: any, onOpenDemo?: (demoId: string) => void, onLikeChange?: (demoId: string, likeCount: number, userLiked: boolean) => void, onViewUserProfile?: (userId: string) => void, allUsers?: any[] }) => {
+export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewUserProfile, allUsers, onPublishToOther }: { demo: Demo, onClose: () => void, t: any, onOpenDemo?: (demoId: string) => void, onLikeChange?: (demoId: string, likeCount: number, userLiked: boolean) => void, onViewUserProfile?: (userId: string) => void, allUsers?: any[], onPublishToOther?: () => void }) => {
   const [activeTab, setActiveTab] = useState<'concept' | 'code' | 'ai'>('concept');
   const [iframeKey, setIframeKey] = useState(0);
   const [aiMessages, setAiMessages] = useState<{role: 'user' | 'model', text: string}[]>([]);
@@ -189,6 +189,23 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
   // Mobile fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
   const previewContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Zoom state
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const minZoom = 0.5;
+  const maxZoom = 2;
+  
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(prev + 0.25, maxZoom));
+  };
+  
+  const handleZoomOut = () => {
+    setZoomLevel(prev => Math.max(prev - 0.25, minZoom));
+  };
+  
+  const handleResetZoom = () => {
+    setZoomLevel(1);
+  };
 
   // Handle window resize for responsive layout
   useEffect(() => {
@@ -539,16 +556,21 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
           ref={previewContainerRef}
           className={`flex-1 bg-slate-900 relative flex flex-col h-[50vh] md:h-full overflow-hidden md:rounded-l-2xl ${isFullscreen ? 'fixed inset-0 z-[100] h-screen w-screen !max-w-none !rounded-none' : ''}`}
         >
-          <div className={`flex-1 relative w-full h-full bg-white ${isFullscreen ? 'h-screen' : ''}`}>
-            <iframe
-              key={iframeKey}
-              src={previewUrl}
-              srcDoc={!isMultiFile ? demo.code : undefined}
-              className={`border-0 block ${isFullscreen ? 'fixed inset-0 w-screen h-screen z-[101]' : 'w-full h-full'}`}
-              title={demo.title}
-              sandbox="allow-scripts allow-popups allow-modals allow-same-origin"
-              allow="fullscreen"
-            />
+          <div className={`flex-1 relative w-full bg-white overflow-auto ${isFullscreen ? 'h-[calc(100vh-56px)]' : ''}`}>
+            <div 
+              className="w-full h-full origin-center transition-transform duration-200"
+              style={{ transform: `scale(${zoomLevel})` }}
+            >
+              <iframe
+                key={iframeKey}
+                src={previewUrl}
+                srcDoc={!isMultiFile ? demo.code : undefined}
+                className="border-0 block w-full h-full"
+                title={demo.title}
+                sandbox="allow-scripts allow-popups allow-modals allow-same-origin"
+                allow="fullscreen"
+              />
+            </div>
             {/* Mobile Fullscreen Hint - Only show on small screens when not fullscreen */}
             {!isFullscreen && (
               <div className="md:hidden absolute top-4 right-4 bg-indigo-600/90 backdrop-blur-sm text-white px-3 py-2 rounded-lg shadow-lg animate-pulse">
@@ -582,17 +604,55 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
               </div>
             )}
           </div>
-          {/* Preview Controls - Hidden in fullscreen mode on mobile */}
-          <div className={`h-14 bg-slate-800 border-t border-slate-700 flex items-center justify-between px-4 md:px-6 shrink-0 z-10 ${isFullscreen ? 'md:flex hidden' : 'flex'}`}>
+          {/* Preview Controls - Always show in fullscreen */}
+          <div className={`h-14 bg-slate-800 border-t border-slate-700 flex items-center justify-between px-4 md:px-6 shrink-0 z-10 ${isFullscreen ? 'fixed bottom-0 left-0 right-0 z-[102]' : ''}`}>
             <div className="flex items-center gap-3">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               <h3 className="text-white font-medium text-sm truncate max-w-[150px] md:max-w-[200px]">{demo.title}</h3>
+              <span className="text-xs text-slate-400 bg-slate-700 px-2 py-0.5 rounded-full">{Math.round(zoomLevel * 100)}%</span>
             </div>
-            <div className="flex gap-2">
-              {/* Mobile Fullscreen Button - Only show on small screens */}
+            <div className="flex items-center gap-1">
+              {/* Zoom Out */}
+              <button
+                onClick={handleZoomOut}
+                disabled={zoomLevel <= minZoom}
+                className="p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
+                title="缩小"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+              </button>
+              {/* Reset Zoom */}
+              <button
+                onClick={handleResetZoom}
+                className="p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg"
+                title="重置缩放"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+              </button>
+              {/* Zoom In */}
+              <button
+                onClick={handleZoomIn}
+                disabled={zoomLevel >= maxZoom}
+                className="p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
+                title="放大"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+              </button>
+              {/* Refresh */}
+              <button
+                onClick={() => {
+                  setIframeKey(k => k + 1);
+                  setZoomLevel(1);
+                }}
+                className="p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg"
+                title="刷新"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+              {/* Mobile Fullscreen Button */}
               <button
                 onClick={toggleFullscreen}
-                className="md:hidden px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white transition-all rounded-lg flex items-center gap-2 shadow-lg shadow-indigo-600/30 active:scale-95"
+                className="md:hidden px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white transition-all rounded-lg flex items-center gap-2 shadow-lg shadow-indigo-600/30 active:scale-95 ml-2"
                 title={isFullscreen ? t('exitFullscreen') || '退出全屏' : t('fullscreen') || '全屏显示'}
               >
                 {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
@@ -601,31 +661,13 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
               {/* Desktop Fullscreen Button */}
               <button
                 onClick={toggleFullscreen}
-                className="hidden md:flex p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg"
+                className="hidden md:flex p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg ml-2"
                 title={isFullscreen ? t('exitFullscreen') || '退出全屏' : t('fullscreen') || '全屏显示'}
               >
                 {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
               </button>
-              <button
-                onClick={() => setIframeKey(k => k + 1)}
-                className="p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg"
-                title={t('refresh')}
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
             </div>
           </div>
-          
-          {/* Floating Exit Button for Mobile Fullscreen */}
-          {isFullscreen && (
-            <button
-              onClick={toggleFullscreen}
-              className="md:hidden fixed top-4 right-4 z-[102] w-10 h-10 bg-black/50 hover:bg-black/70 backdrop-blur-sm text-white rounded-full flex items-center justify-center transition-all active:scale-95"
-              title={t('exitFullscreen') || '退出全屏'}
-            >
-              <Minimize2 className="w-5 h-5" />
-            </button>
-          )}
         </div>
 
         {/* Right Side: Sidebar - Added explicit rounded-r-2xl */}
@@ -722,6 +764,16 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
                    <p className="leading-relaxed">{demo.description}</p>
                  </div>
 
+                 {onPublishToOther && (
+                   <button
+                     onClick={onPublishToOther}
+                     className="w-full py-2 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-indigo-700 hover:to-purple-700 transition-all flex items-center justify-center gap-2 shadow-sm"
+                   >
+                     <FolderOpen className="w-4 h-4" />
+                     发布到其他平台
+                   </button>
+                 )}
+                 
                  <div className="p-4 bg-white rounded-xl border border-indigo-100 shadow-sm mt-6">
                    <h5 className="text-sm font-bold text-indigo-800 mb-2 flex items-center gap-2">
                      <Sparkles className="w-4 h-4" /> {t('didYouKnow')}

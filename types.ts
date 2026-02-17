@@ -101,3 +101,17 @@ export interface ChatMessage {
   text: string;
   timestamp: number;
 }
+
+export interface DemoPublication {
+  id: string;
+  demoId: string;
+  layer: Layer;
+  communityId?: string;
+  categoryId: string;
+  status: 'pending' | 'published' | 'rejected';
+  rejectionReason?: string;
+  requestedBy: string;
+  requestedAt: number;
+  reviewedBy?: string;
+  reviewedAt?: number;
+}

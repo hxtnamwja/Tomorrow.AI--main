@@ -13,6 +13,7 @@ import categoryRoutes from './routes/categories.js';
 import bountyRoutes from './routes/bounties.js';
 import aiRoutes from './routes/ai.js';
 import usersRoutes from './routes/users.js';
+import publicationsRoutes from './routes/publications.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -110,6 +111,7 @@ app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/bounties', bountyRoutes);
 app.use('/api/v1/ai', aiRoutes);
 app.use('/api/v1/users', usersRoutes);
+app.use('/api/v1/publications', publicationsRoutes);
 
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {

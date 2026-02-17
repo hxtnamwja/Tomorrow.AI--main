@@ -1,4 +1,4 @@
-import { Demo, Category, Bounty, Community, User, UserStats } from '../types';
+import { Demo, Category, Bounty, Community, User, UserStats, DemoPublication } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
@@ -411,5 +411,61 @@ export const UsersAPI = {
   getDemos: async (id: string): Promise<Demo[]> => {
     const result = await apiRequest<Demo[]>(`/users/${id}/demos`);
     return result.data;
+  },
+};
+
+// Publications API
+export const PublicationsAPI = {
+  create: async (data: { demoId: string, layer: string, categoryId: string, communityId?: string }): Promise<DemoPublication> => {
+    const result = await apiRequest<DemoPublication>('/publications', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return result.data;
+  },
+
+  getAll: async (params?: {
+    demoId?: string;
+    status?: string;
+    layer?: string;
+    communityId?: string;
+    requestedBy?: string;
+  }): Promise<DemoPublication[]> => {
+    const queryParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          queryParams.append(key, value);
+        }
+      });
+    }
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
+    const result = await apiRequest<DemoPublication[]>(`/publications${query}`);
+    return result.data;
+  },
+
+  getPending: async (): Promise<DemoPublication[]> => {
+    const result = await apiRequest<DemoPublication[]>('/publications/pending');
+    return result.data;
+  },
+
+  updateStatus: async (
+    id: string,
+    status: string,
+    rejectionReason?: string
+  ): Promise<DemoPublication> => {
+    const result = await apiRequest<DemoPublication>(`/publications/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, rejectionReason }),
+    });
+    return result.data;
+  },
+
+  approve: async (id: string): Promise<DemoPublication> => {
+    return await PublicationsAPI.updateStatus(id, 'published');
+  },
+
+  reject: async (id: string, reason: string): Promise<DemoPublication> => {
+    return await PublicationsAPI.updateStatus(id, 'rejected', reason);
   },
 };
