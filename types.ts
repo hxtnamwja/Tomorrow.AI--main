@@ -116,7 +116,7 @@ export interface DemoPublication {
   reviewedAt?: number;
 }
 
-export type FeedbackType = 'demo_complaint' | 'community_feedback' | 'website_feedback';
+export type FeedbackType = 'demo_complaint' | 'community_feedback' | 'website_feedback' | 'ban_appeal';
 
 export interface Feedback {
   id: string;
@@ -134,4 +134,13 @@ export interface Feedback {
   createdAt: number;
   reviewedBy?: string;
   reviewedAt?: number;
+}
+
+export interface CommunityBan {
+  id: string;
+  communityId: string;
+  userId: string;
+  reason?: string;
+  bannedBy: string;
+  createdAt: number;
 }

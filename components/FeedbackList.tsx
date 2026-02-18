@@ -28,6 +28,8 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
         return <MessageSquare className="w-5 h-5 text-indigo-500" />;
       case 'website_feedback':
         return <Bug className="w-5 h-5 text-amber-500" />;
+      case 'ban_appeal':
+        return <AlertTriangle className="w-5 h-5 text-purple-500" />;
       default:
         return <MessageSquare className="w-5 h-5 text-slate-500" />;
     }
@@ -41,6 +43,8 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
         return '社区反馈';
       case 'website_feedback':
         return '网页建议';
+      case 'ban_appeal':
+        return '解封申诉';
       default:
         return '反馈';
     }
@@ -121,17 +125,27 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
 
   return (
     <div className="space-y-4">
-      {feedback.map((item) => (
-        <div key={item.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      {feedback.map((item) => {
+        const isBanAppeal = item.type === 'ban_appeal';
+        return (
+        <div 
+          key={item.id} 
+          className={`bg-white rounded-xl border overflow-hidden ${isBanAppeal ? 'border-purple-300 ring-2 ring-purple-100' : 'border-slate-200'}`}
+        >
           <div 
-            className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
+            className={`p-4 flex items-center justify-between cursor-pointer transition-colors ${isBanAppeal ? 'bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100' : 'hover:bg-slate-50'}`}
             onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
           >
             <div className="flex items-center gap-3">
               {getTypeIcon(item.type)}
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-bold text-slate-800">{item.title}</h3>
+                  {isBanAppeal && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-purple-600 text-white font-bold flex items-center gap-1">
+                      🔓 解封申诉
+                    </span>
+                  )}
                   <span className={`text-xs px-2 py-1 rounded-full flex items-center gap-1 ${getStatusColor(item.status)}`}>
                     {getStatusIcon(item.status)}
                     {getStatusLabel(item.status)}
@@ -228,7 +242,8 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 };

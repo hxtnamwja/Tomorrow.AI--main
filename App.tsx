@@ -59,6 +59,8 @@ export default function App() {
   const [language, setLanguage] = useState<Language>('cn');
   const [role, setRole] = useState<UserRole>('user');
   const [currentUserId, setCurrentUserId] = useState<string>(''); // Simulated Session ID
+  const [isBanned, setIsBanned] = useState<number>(0);
+  const [banReason, setBanReason] = useState<string | undefined>(undefined);
 
   // Views
   const [view, setView] = useState<'explore' | 'upload' | 'admin' | 'bounties' | 'profile' | 'community_hall'>('explore');
@@ -132,7 +134,7 @@ export default function App() {
   // Feedback states
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [feedbackModalData, setFeedbackModalData] = useState<{
-    type: 'demo_complaint' | 'community_feedback' | 'website_feedback';
+    type: 'demo_complaint' | 'community_feedback' | 'website_feedback' | 'ban_appeal';
     layer: Layer;
     communityId?: string;
     demoId?: string;
@@ -152,8 +154,13 @@ export default function App() {
         setIsLoggedIn(true);
         setRole(storedUser.role as UserRole);
         setCurrentUserId(storedUser.id);
+        setIsBanned(storedUser.isBanned || 0);
+        setBanReason(storedUser.banReason);
         if (storedUser.role === 'general_admin') {
            setView('admin');
+        } else if (storedUser.isBanned) {
+          // If user is banned, go to profile page
+          setView('profile');
         }
         // Check if this is the first login
         const hasVisitedBefore = localStorage.getItem('sci_demo_visited');
@@ -167,6 +174,20 @@ export default function App() {
     };
     initAuth();
   }, []);
+
+  // Enforce profile view for banned users
+  useEffect(() => {
+    if (isLoggedIn && isBanned && view !== 'profile') {
+      setView('profile');
+    }
+  }, [isLoggedIn, isBanned, view]);
+  
+  // Refresh data when user logs in or role changes
+  useEffect(() => {
+    if (isLoggedIn) {
+      refreshAllData();
+    }
+  }, [isLoggedIn, role, currentUserId]);
 
   const refreshAllData = async () => {
     await StorageService.initialize();
@@ -186,14 +207,19 @@ export default function App() {
       StorageService.getAllPublicUsers ? StorageService.getAllPublicUsers() : []
     ]).catch(() => [null, null, null, []]);
     
+    const communitiesDataArray = communitiesData || [];
+    
     setDemos(demosData);
     setCategories(categoriesData || []);
     setBounties(bountiesData || []);
-    setCommunities(communitiesData || []);
+    setCommunities(communitiesDataArray);
     setAllUsers(usersData || []);
     
+    // Check if user is a community admin directly using communitiesData
+    const isCommunityAdmin = communitiesDataArray.some(c => c.creatorId === currentUserId);
+    
     // Load pending publications if user is admin
-    if (isLoggedIn && (role === 'general_admin' || myCommunities.some(c => c.creatorId === currentUserId))) {
+    if (isLoggedIn && (role === 'general_admin' || isCommunityAdmin)) {
       try {
         const pubs = await PublicationsAPI.getPending();
         setPublications(pubs);
@@ -208,7 +234,7 @@ export default function App() {
         const myFb = await FeedbackAPI.getMy();
         setMyFeedback(myFb);
         
-        if (role === 'general_admin' || myCommunities.some(c => c.creatorId === currentUserId)) {
+        if (role === 'general_admin' || isCommunityAdmin) {
           const pendingFb = await FeedbackAPI.getPending();
           setPendingFeedback(pendingFb);
         }
@@ -258,7 +284,7 @@ export default function App() {
   };
 
   const handleOpenFeedback = (
-    type: 'demo_complaint' | 'community_feedback' | 'website_feedback',
+    type: 'demo_complaint' | 'community_feedback' | 'website_feedback' | 'ban_appeal',
     layer: Layer,
     communityId?: string,
     demoId?: string,
@@ -306,17 +332,23 @@ export default function App() {
       
       setRole(result.user.role as UserRole);
       setIsLoggedIn(true);
+      setCurrentUserId(result.user.id);
+      setIsBanned(result.user.isBanned || 0);
+      setBanReason(result.user.banReason);
       
-      // Redirect based on role
+      // Redirect based on role and ban status
       if (result.user.role === 'general_admin') {
         setView('admin');
+        setLayer('general');
+      } else if (result.user.isBanned) {
+        // If user is banned, go to profile page
+        setView('profile');
         setLayer('general');
       } else {
         setView('explore');
         setLayer('general');
       }
       
-      setCurrentUserId(result.user.id);
       await refreshAllData();
     } catch (error: any) {
       console.error('Auth failed:', error);
@@ -360,9 +392,19 @@ export default function App() {
 
   // --- Derived State for Communities ---
   
+  const isCommunityMember = (communityId: string): boolean => {
+      if (role === 'general_admin') return true; // General admin is automatically member of all communities
+      const community = communities.find(c => c.id === communityId);
+      if (!community) return false;
+      return community.members.includes(currentUserId);
+  };
+
   const myCommunities = useMemo(() => {
+      if (role === 'general_admin') {
+          return communities.filter(c => c.status === 'approved');
+      }
       return communities.filter(c => c.members.includes(currentUserId) && c.status === 'approved');
-  }, [communities, currentUserId]);
+  }, [communities, currentUserId, role]);
 
   const activeCommunity = useMemo(() => {
       return communities.find(c => c.id === activeCommunityId);
@@ -655,157 +697,182 @@ export default function App() {
 
   // --- Views ---
 
-  const renderSidebarContent = () => (
-    <>
-      <div className="px-4 mb-6 shrink-0">
-        <div className="bg-slate-100/80 p-1 rounded-xl flex mb-4 border border-slate-200">
-           <button
-             onClick={() => { setLayer('general'); setActiveCommunityId(null); setView('explore'); setIsMobileSidebarOpen(false); }}
-             className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg transition-all ${layer === 'general' ? 'bg-white text-indigo-600 shadow-sm border border-slate-100' : 'text-slate-500 hover:text-slate-700'}`}
-           >
-             <Globe className="w-3.5 h-3.5" />
-             {t('layerGeneral')}
-           </button>
-           <button
-             onClick={() => {
-                 setLayer('community');
-                 if(activeCommunityId) setView('explore');
-                 else setView('community_hall');
-                 setIsMobileSidebarOpen(false);
-             }}
-             className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg transition-all ${layer === 'community' ? 'bg-white text-indigo-600 shadow-sm border border-slate-100' : 'text-slate-500 hover:text-slate-700'}`}
-           >
-             <Users className="w-3.5 h-3.5" />
-             {t('layerCommunity')}
-           </button>
-        </div>
-
-        {layer === 'community' && (
-            <div className="space-y-3 animate-in slide-in-from-left-4 duration-300">
-                <div className="relative">
-                    <button
-                        onClick={() => setIsCreateCommModalOpen(true)}
-                        className="w-full mb-2 border border-dashed border-indigo-300 text-indigo-600 rounded-xl py-2.5 text-xs font-bold hover:bg-indigo-50/50 flex items-center justify-center gap-2 transition-colors"
-                    >
-                        <Plus className="w-3.5 h-3.5" /> {t('createCommunity')}
-                    </button>
-                </div>
-
-                <div className="px-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('myCommunities')}</label>
-                </div>
-                <div className="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1">
-                    <button 
-                        onClick={() => { setActiveCommunityId(null); setView('community_hall'); }}
-                        className={`w-full text-left px-3 py-2.5 text-sm rounded-xl flex items-center gap-3 transition-all ${!activeCommunityId && view === 'community_hall' ? 'bg-indigo-50 text-indigo-700 font-bold shadow-sm ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-slate-50'}`}
-                    >
-                        <Building2 className={`w-4 h-4 ${!activeCommunityId && view === 'community_hall' ? 'text-indigo-600' : 'text-slate-400'}`} />
-                        {t('communityHall')}
-                    </button>
-                    
-                    {myCommunities.map(c => (
-                        <button 
-                            key={c.id}
-                            onClick={() => { setActiveCommunityId(c.id); setView('explore'); }}
-                            className={`w-full text-left px-3 py-2.5 text-sm rounded-xl truncate transition-all flex items-center gap-2 ${activeCommunityId === c.id ? 'bg-indigo-50 text-indigo-700 font-bold shadow-sm ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-slate-50'}`}
-                        >
-                            <span className={`w-1.5 h-1.5 rounded-full ${activeCommunityId === c.id ? 'bg-indigo-500' : 'bg-slate-300'}`}></span>
-                            {c.name}
-                        </button>
-                    ))}
-                    {myCommunities.length === 0 && (
-                        <div className="text-xs text-slate-400 italic px-3 py-2">{t('noCommunities')}</div>
-                    )}
-                </div>
-
-                {/* Community Feedback Button - Only show when specific community is selected */}
-                {activeCommunity && activeCommunityId && (
-                    <button
-                        onClick={() => handleOpenFeedback('community_feedback', 'community', activeCommunityId, undefined, undefined, activeCommunity.name)}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-700 hover:bg-amber-100 transition-colors"
-                    >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        社区反馈
-                    </button>
-                )}
+  const renderSidebarContent = () => {
+    if (isBanned) {
+      return (
+        <div className="px-4 py-6">
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+              <ShieldCheck className="w-8 h-8 text-red-600" />
             </div>
-        )}
-      </div>
-
-      {/* Hide category filter in admin view */}
-      <div className="flex-1 overflow-y-auto px-4 custom-scrollbar border-t border-slate-100/80 pt-6">
-        <div className="flex items-center justify-between mb-4 px-2 sticky top-0 z-20 pb-2">
-           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">{t('subjects')}</h3>
-           {/* Only show Add Category if General Layer (hidden for now) or Community Layer + Is Admin of that Community */}
-           {layer === 'community' && activeCommunityId && isCurrentCommunityAdmin && (
-             <button 
-               onClick={() => openCategoryModal(null)} 
-               className="text-xs bg-white text-indigo-600 p-1.5 rounded-lg hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 transition-all shadow-sm"
-               title={t('addCategory')}
+            <div>
+              <h3 className="text-lg font-bold text-slate-800 mb-2">账户已被封禁</h3>
+              {banReason && (
+                <p className="text-sm text-red-600 mb-4">原因: {banReason}</p>
+              )}
+              <p className="text-sm text-slate-500 mb-6">
+                您只能访问个人中心查看您的作品，并提交解封申诉
+              </p>
+            </div>
+            <button
+              onClick={() => handleOpenFeedback('ban_appeal', 'general')}
+              className="w-full px-4 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors"
+            >
+              提交解封申诉
+            </button>
+          </div>
+        </div>
+      );
+    }
+    
+    return (
+      <>
+        <div className="px-4 mb-6 shrink-0">
+          <div className="bg-slate-100/80 p-1 rounded-xl flex mb-4 border border-slate-200">
+             <button
+               onClick={() => { setLayer('general'); setActiveCommunityId(null); setView('explore'); setIsMobileSidebarOpen(false); }}
+               className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg transition-all ${layer === 'general' ? 'bg-white text-indigo-600 shadow-sm border border-slate-100' : 'text-slate-500 hover:text-slate-700'}`}
              >
-               <Plus className="w-3.5 h-3.5" />
+               <Globe className="w-3.5 h-3.5" />
+               {t('layerGeneral')}
              </button>
-           )}
-        </div>
-        
-        <nav className="space-y-1 pb-10">
-          <button 
-            onClick={() => handleCategorySelect('All')}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-xl transition-all ${activeCategory === 'All' ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-slate-50'}`}
-          >
-            <FolderOpen className={`w-4 h-4 ${activeCategory === 'All' ? 'text-indigo-600' : 'text-slate-400'}`} />
-            {t('all')}
-          </button>
+             <button
+               onClick={() => {
+                   setLayer('community');
+                   if(activeCommunityId) setView('explore');
+                   else setView('community_hall');
+                   setIsMobileSidebarOpen(false);
+               }}
+               className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg transition-all ${layer === 'community' ? 'bg-white text-indigo-600 shadow-sm border border-slate-100' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+               <Users className="w-3.5 h-3.5" />
+               {t('layerCommunity')}
+             </button>
+          </div>
 
-          {layer === 'general' ? (
-            Object.values(Subject).map(sub => {
-              // Map Subject enum values to translation keys
-              const translationKey: any = {
-                'Physics': 'physics',
-                'Chemistry': 'chemistry',
-                'Mathematics': 'mathematics',
-                'Biology': 'biology',
-                'Computer Science': 'computerScience',
-                'Astronomy': 'astronomy',
-                'Earth Science': 'earthScience',
-                'Creative Tools': 'creativeTools'
-              }[sub] || sub.toLowerCase();
-              
-              return (
-                <button 
-                  key={sub}
-                  onClick={() => handleCategorySelect(sub)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-xl transition-all ${activeCategory === sub ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-slate-50'}`}
-                >
-                  <SubjectIcon subject={sub} />
-                  {t(translationKey)}
-                </button>
-              );
-            })
-          ) : (
-            <div className="mt-2 space-y-1">
-               {rootCategories.length === 0 && (
-                 <div className="text-xs text-slate-400 px-4 py-2 italic">{t('noCategoriesYet')}</div>
-               )}
-              {rootCategories.map(cat => (
-                <CategoryTreeNode 
-                  key={cat.id}
-                  category={cat}
-                  allCategories={categories}
-                  activeId={activeCategory}
-                  onSelect={handleCategorySelect}
-                  onAddSub={openCategoryModal}
-                  onDelete={handleDeleteCategory}
-                  role={isCurrentCommunityAdmin ? 'community_admin' : 'user'}
-                  t={t}
-                />
-              ))}
-            </div>
+          {layer === 'community' && (
+              <div className="space-y-3 animate-in slide-in-from-left-4 duration-300">
+                  <div className="relative">
+                      <button
+                          onClick={() => setIsCreateCommModalOpen(true)}
+                          className="w-full mb-2 border border-dashed border-indigo-300 text-indigo-600 rounded-xl py-2.5 text-xs font-bold hover:bg-indigo-50/50 flex items-center justify-center gap-2 transition-colors"
+                      >
+                          <Plus className="w-3.5 h-3.5" /> {t('createCommunity')}
+                      </button>
+                  </div>
+
+                  <div className="px-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('myCommunities')}</label>
+                  </div>
+                  <div className="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1">
+                      <button 
+                          onClick={() => { setActiveCommunityId(null); setView('community_hall'); }}
+                          className={`w-full text-left px-3 py-2.5 text-sm rounded-xl flex items-center gap-3 transition-all ${!activeCommunityId && view === 'community_hall' ? 'bg-indigo-50 text-indigo-700 font-bold shadow-sm ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-slate-50'}`}
+                      >
+                          <Building2 className={`w-4 h-4 ${!activeCommunityId && view === 'community_hall' ? 'text-indigo-600' : 'text-slate-400'}`} />
+                          {t('communityHall')}
+                      </button>
+                      
+                      {myCommunities.map(c => (
+                          <button 
+                              key={c.id}
+                              onClick={() => { setActiveCommunityId(c.id); setView('explore'); }}
+                              className={`w-full text-left px-3 py-2.5 text-sm rounded-xl truncate transition-all flex items-center gap-2 ${activeCommunityId === c.id ? 'bg-indigo-50 text-indigo-700 font-bold shadow-sm ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-slate-50'}`}
+                          >
+                              <span className={`w-1.5 h-1.5 rounded-full ${activeCommunityId === c.id ? 'bg-indigo-500' : 'bg-slate-300'}`}></span>
+                              {c.name}
+                          </button>
+                      ))}
+                      {myCommunities.length === 0 && (
+                          <div className="text-xs text-slate-400 italic px-3 py-2">{t('noCommunities')}</div>
+                      )}
+                  </div>
+
+                  {activeCommunity && activeCommunityId && (
+                      <button
+                          onClick={() => handleOpenFeedback('community_feedback', 'community', activeCommunityId, undefined, undefined, activeCommunity.name)}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-700 hover:bg-amber-100 transition-colors"
+                      >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          社区反馈
+                      </button>
+                  )}
+              </div>
           )}
-        </nav>
-      </div>
-    </>
-  );
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 custom-scrollbar border-t border-slate-100/80 pt-6">
+          <div className="flex items-center justify-between mb-4 px-2 sticky top-0 z-20 pb-2">
+             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">{t('subjects')}</h3>
+             {layer === 'community' && activeCommunityId && isCurrentCommunityAdmin && (
+               <button 
+                 onClick={() => openCategoryModal(null)} 
+                 className="text-xs bg-white text-indigo-600 p-1.5 rounded-lg hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 transition-all shadow-sm"
+                 title={t('addCategory')}
+               >
+                 <Plus className="w-3.5 h-3.5" />
+               </button>
+             )}
+          </div>
+          
+          <nav className="space-y-1 pb-10">
+            <button 
+              onClick={() => handleCategorySelect('All')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-xl transition-all ${activeCategory === 'All' ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-slate-50'}`}
+            >
+              <FolderOpen className={`w-4 h-4 ${activeCategory === 'All' ? 'text-indigo-600' : 'text-slate-400'}`} />
+              {t('all')}
+            </button>
+
+            {layer === 'general' ? (
+              Object.values(Subject).map(sub => {
+                const translationKey: any = {
+                  'Physics': 'physics',
+                  'Chemistry': 'chemistry',
+                  'Mathematics': 'mathematics',
+                  'Biology': 'biology',
+                  'Computer Science': 'computerScience',
+                  'Astronomy': 'astronomy',
+                  'Earth Science': 'earthScience',
+                  'Creative Tools': 'creativeTools'
+                }[sub] || sub.toLowerCase();
+                
+                return (
+                  <button 
+                    key={sub}
+                    onClick={() => handleCategorySelect(sub)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-xl transition-all ${activeCategory === sub ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <SubjectIcon subject={sub} />
+                    {t(translationKey)}
+                  </button>
+                );
+              })
+            ) : (
+              <div className="mt-2 space-y-1">
+                 {rootCategories.length === 0 && (
+                   <div className="text-xs text-slate-400 px-4 py-2 italic">{t('noCategoriesYet')}</div>
+                 )}
+                {rootCategories.map(cat => (
+                  <CategoryTreeNode 
+                    key={cat.id}
+                    category={cat}
+                    allCategories={categories}
+                    activeId={activeCategory}
+                    onSelect={handleCategorySelect}
+                    onAddSub={openCategoryModal}
+                    onDelete={handleDeleteCategory}
+                    role={isCurrentCommunityAdmin ? 'community_admin' : 'user'}
+                    t={t}
+                  />
+                ))}
+              </div>
+            )}
+          </nav>
+        </div>
+      </>
+    );
+  };
 
   const renderSidebar = () => (
     <>
@@ -860,7 +927,66 @@ export default function App() {
     </>
   );
 
-  const renderTopbar = () => (
+  const renderTopbar = () => {
+    if (isBanned) {
+      return (
+        <header className="fixed top-0 left-0 right-0 h-16 glass-panel border-b border-white/50 z-30 flex items-center justify-between px-4 md:px-6 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-md overflow-hidden">
+              <img src="/logo.jpg" alt="Logo" className="w-full h-full object-cover" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-slate-800 tracking-tight leading-none">{t('appTitle')}</h1>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                个人中心
+              </span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setLanguage(l => l === 'en' ? 'cn' : 'en')}
+              className="text-xs font-semibold px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-50 text-slate-600 shrink-0 transition-colors"
+            >
+              {language === 'en' ? 'CN' : 'EN'}
+            </button>
+            
+            <div className="relative ml-2 shrink-0">
+              <button
+                onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                className="flex items-center gap-2 px-1.5 py-1.5 md:px-3 md:py-1.5 rounded-full text-xs font-bold transition-all border select-none shrink-0 cursor-pointer shadow-sm bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 border-emerald-100 hover:shadow-md"
+              >
+                <UserCircle className="w-5 h-5 md:w-4 md:h-4" />
+                <span className="hidden md:inline">{t('roleUser')}</span>
+                <ChevronDown className="w-3 h-3 ml-1 opacity-50" />
+              </button>
+
+              {isProfileMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in slide-in-from-top-2 overflow-hidden">
+                   <div className="px-4 py-2 border-b border-slate-50 mb-1">
+                      <p className="text-xs text-slate-400 uppercase tracking-wider font-bold">{t('accessLevel')}</p>
+                      <p className="text-sm font-bold text-slate-700 truncate">{t('roleUser')}</p>
+                   </div>
+                   
+                   <button 
+                      onClick={() => {
+                        handleLogout();
+                        setIsProfileMenuOpen(false);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 font-medium flex items-center gap-2 transition-colors"
+                   >
+                      <LogOut className="w-4 h-4" />
+                      {t('logout')}
+                   </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+      );
+    }
+    
+    return (
     <header className="fixed top-0 left-0 right-0 h-16 glass-panel border-b border-white/50 z-30 flex items-center justify-between px-4 md:px-6 shadow-sm">
       <div className="flex items-center gap-3 md:gap-12">
         {/* Mobile menu button */}
@@ -1085,6 +1211,7 @@ export default function App() {
         </div>
     </header>
   );
+};
 
   const renderGallery = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8 pb-20">
@@ -1256,9 +1383,9 @@ export default function App() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                   {filteredCommunities.map(c => {
-                      const isMember = c.members.includes(currentUserId);
+                      const isMember = role === 'general_admin' || c.members.includes(currentUserId);
                       const isPending = c.pendingMembers.includes(currentUserId);
-                      const isCommunityAdmin = c.creatorId === currentUserId;
+                      const isCommunityAdmin = role === 'general_admin' || c.creatorId === currentUserId;
                       const hasPendingRequests = c.pendingMembers.length > 0;
 
                       return (
@@ -1275,8 +1402,8 @@ export default function App() {
                               <p className="text-sm text-slate-500 mb-8 line-clamp-2 h-10 leading-relaxed">{c.description}</p>
                               
                               <div className="flex gap-3">
-                                  {/* Admin Panel Button - Only visible to community admin (regardless of membership) */}
-                                  {isCommunityAdmin ? (
+                                  {/* General Admin or Community Admin: Can open and manage the community */}
+                                  {role === 'general_admin' || isCommunityAdmin ? (
                                       <>
                                           <button 
                                               onClick={() => { setActiveCommunityId(c.id); setView('explore'); }}
@@ -1704,6 +1831,10 @@ export default function App() {
       handleOpenDemoWithPermission(demo, true);
     };
     
+    const handleOpenBanAppeal = () => {
+      handleOpenFeedback('ban_appeal', 'general');
+    };
+    
     return (
       <ProfilePage
         userId={userId}
@@ -1720,6 +1851,9 @@ export default function App() {
         onOpenCommunity={handleOpenCommunity}
         onOpenDemo={handleOpenDemo}
         communities={communities}
+        isBanned={isBanned}
+        banReason={banReason}
+        onOpenBanAppeal={handleOpenBanAppeal}
       />
     );
   };
@@ -1778,6 +1912,7 @@ export default function App() {
         <CommunityAdminPanel
           community={communities.find(c => c.id === activeCommunityAdminPanel)!}
           currentUserId={currentUserId}
+          currentUserRole={role}
           onClose={() => setActiveCommunityAdminPanel(null)}
           onUpdateCommunity={handleUpdateCommunity}
           onDeleteCommunity={handleDeleteCommunity}
@@ -1956,7 +2091,7 @@ export default function App() {
               setWasViewingProfile(false);
             }}
             allUsers={allUsers}
-            onPublishToOther={selectedDemo.creatorId === currentUserId ? () => setIsPublishModalOpen(true) : undefined}
+            onPublishToOther={selectedDemo.creatorId === currentUserId && !isBanned ? () => setIsPublishModalOpen(true) : undefined}
             onReportDemo={() => {
               handleOpenFeedback(
                 'demo_complaint',

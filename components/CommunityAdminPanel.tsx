@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { X, Users, Settings, Trash2, UserCheck, UserX, LogOut, Building2 } from 'lucide-react';
-import { Community } from '../types';
+import { Community, UserRole } from '../types';
 
 interface CommunityAdminPanelProps {
   community: Community;
   currentUserId: string;
+  currentUserRole: UserRole;
   onClose: () => void;
   onUpdateCommunity: (community: Community) => void;
   onDeleteCommunity: (communityId: string) => void;
@@ -15,6 +16,7 @@ interface CommunityAdminPanelProps {
 export const CommunityAdminPanel: React.FC<CommunityAdminPanelProps> = ({
   community,
   currentUserId,
+  currentUserRole,
   onClose,
   onUpdateCommunity,
   onDeleteCommunity,
@@ -25,8 +27,8 @@ export const CommunityAdminPanel: React.FC<CommunityAdminPanelProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
-  // Check if current user is the community creator (admin)
-  const isAdmin = community.creatorId === currentUserId;
+  // Check if current user is the community creator or general admin
+  const isAdmin = community.creatorId === currentUserId || currentUserRole === 'general_admin';
 
   // Get all members info (in real app, you'd fetch user details)
   const memberCount = community.members.length;

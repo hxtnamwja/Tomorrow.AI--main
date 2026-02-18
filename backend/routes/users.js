@@ -1,6 +1,21 @@
 import { Router } from 'express';
 import { runQuery, getRow, getAllRows } from '../database.js';
 
+const mapUserRow = (row) => {
+  if (!row) return null;
+  return {
+    id: row.id,
+    username: row.username,
+    role: row.role,
+    createdAt: row.created_at,
+    isBanned: row.is_banned,
+    banReason: row.ban_reason || undefined,
+    contactInfo: row.contact_info || undefined,
+    paymentQr: row.payment_qr || undefined,
+    bio: row.bio || undefined
+  };
+};
+
 const mapDemoRow = (row) => {
   if (!row) return null;
   return {
@@ -54,7 +69,8 @@ router.get('/', async (req, res) => {
       FROM users 
       ORDER BY created_at DESC
     `);
-    res.json({ code: 200, message: 'Success', data: users });
+    const mappedUsers = users.map(mapUserRow);
+    res.json({ code: 200, message: 'Success', data: mappedUsers });
   } catch (error) {
     console.error('Get users error:', error);
     res.status(500).json({ code: 500, message: 'Server error', data: null });
@@ -65,12 +81,13 @@ router.get('/', async (req, res) => {
 router.get('/public', async (req, res) => {
   try {
     const users = await getAllRows(`
-      SELECT id, username, role, created_at, contact_info, bio 
+      SELECT id, username, role, created_at, contact_info, bio, is_banned, ban_reason
       FROM users 
       WHERE is_banned = 0
       ORDER BY created_at DESC
     `);
-    res.json({ code: 200, message: 'Success', data: users });
+    const mappedUsers = users.map(mapUserRow);
+    res.json({ code: 200, message: 'Success', data: mappedUsers });
   } catch (error) {
     console.error('Get public users error:', error);
     res.status(500).json({ code: 500, message: 'Server error', data: null });
@@ -106,7 +123,12 @@ router.get('/community/:communityId', async (req, res) => {
       ORDER BY u.created_at DESC
     `, [communityId]);
 
-    res.json({ code: 200, message: 'Success', data: members });
+    const mappedMembers = members.map(member => ({
+      ...mapUserRow(member),
+      membershipStatus: member.membership_status
+    }));
+
+    res.json({ code: 200, message: 'Success', data: mappedMembers });
   } catch (error) {
     console.error('Get community users error:', error);
     res.status(500).json({ code: 500, message: 'Server error', data: null });
@@ -128,7 +150,7 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ code: 404, message: 'User not found', data: null });
     }
 
-    res.json({ code: 200, message: 'Success', data: user });
+    res.json({ code: 200, message: 'Success', data: mapUserRow(user) });
   } catch (error) {
     console.error('Get user error:', error);
     res.status(500).json({ code: 500, message: 'Server error', data: null });
@@ -242,7 +264,7 @@ router.put('/:id', async (req, res) => {
       FROM users WHERE id = ?
     `, [id]);
 
-    res.json({ code: 200, message: 'User updated successfully', data: updatedUser });
+    res.json({ code: 200, message: 'User updated successfully', data: mapUserRow(updatedUser) });
   } catch (error) {
     console.error('Update user error:', error);
     res.status(500).json({ code: 500, message: 'Server error', data: null });

@@ -14,6 +14,9 @@ interface ProfilePageProps {
   onOpenCommunity?: (communityId: string) => void;
   onOpenDemo?: (demo: Demo) => void;
   communities?: Community[];
+  isBanned?: number;
+  banReason?: string;
+  onOpenBanAppeal?: () => void;
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({
@@ -24,7 +27,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   onBack,
   onOpenCommunity,
   onOpenDemo,
-  communities = []
+  communities = [],
+  isBanned,
+  banReason,
+  onOpenBanAppeal
 }) => {
   const [user, setUser] = useState<UserType | null>(null);
   const [stats, setStats] = useState<any>(null);
@@ -351,6 +357,30 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 </div>
               </div>
 
+              {isOwnProfile && isBanned && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="font-bold text-red-800 flex items-center gap-2 mb-1">
+                        <MessageSquare className="w-5 h-5" />
+                        账号已封禁
+                      </h3>
+                      {banReason && (
+                        <p className="text-red-700 text-sm">封禁原因：{banReason}</p>
+                      )}
+                    </div>
+                    {onOpenBanAppeal && (
+                      <button
+                        onClick={onOpenBanAppeal}
+                        className="px-4 py-2 bg-white border border-red-300 text-red-700 font-bold rounded-lg hover:bg-red-100 transition-colors text-sm"
+                      >
+                        提交申诉
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              
               <div className="flex flex-wrap items-center gap-6 pt-2">
                 <div className="flex items-center gap-2 text-slate-600">
                   <Building2 className="w-4 h-4" />

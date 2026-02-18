@@ -18,7 +18,7 @@ db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS feedback (
       id TEXT PRIMARY KEY,
-      type TEXT NOT NULL CHECK (type IN ('demo_complaint', 'community_feedback', 'website_feedback')),
+      type TEXT NOT NULL CHECK (type IN ('demo_complaint', 'community_feedback', 'website_feedback', 'ban_appeal')),
       title TEXT NOT NULL,
       content TEXT NOT NULL,
       layer TEXT NOT NULL CHECK (layer IN ('general', 'community')),

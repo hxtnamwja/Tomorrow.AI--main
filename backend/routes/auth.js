@@ -14,15 +14,6 @@ router.post('/login', async (req, res) => {
       return res.status(404).json({ code: 404, message: 'User not found. Please register.', data: null });
     }
     
-    // Check if user is banned
-    if (user.is_banned) {
-      return res.status(403).json({ 
-        code: 403, 
-        message: user.ban_reason ? `Account banned: ${user.ban_reason}` : 'Account banned', 
-        data: null 
-      });
-    }
-    
     // Verify password (in real app, use bcrypt)
     const storedPassword = user.password || '123456';
     if (password !== storedPassword) {
@@ -41,6 +32,7 @@ router.post('/login', async (req, res) => {
           username: user.username,
           role: user.role,
           isBanned: user.is_banned,
+          banReason: user.ban_reason,
           contactInfo: user.contact_info,
           paymentQr: user.payment_qr,
           bio: user.bio

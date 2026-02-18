@@ -188,6 +188,23 @@ export const StorageService = {
   deleteCommunity: async (communityId: string): Promise<void> => {
     await CommunitiesAPI.delete(communityId);
   },
+  
+  banCommunityUser: async (communityId: string, userId: string, reason?: string): Promise<void> => {
+    await CommunitiesAPI.banUser(communityId, userId, reason);
+  },
+  
+  unbanCommunityUser: async (communityId: string, userId: string): Promise<void> => {
+    await CommunitiesAPI.unbanUser(communityId, userId);
+  },
+  
+  getCommunityBans: async (communityId: string): Promise<any[]> => {
+    try {
+      return await CommunitiesAPI.getBans(communityId);
+    } catch (error) {
+      console.error('Error fetching community bans:', error);
+      return [];
+    }
+  },
 
   // --- Demos ---
   getAllDemos: async (): Promise<Demo[]> => {

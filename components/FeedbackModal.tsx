@@ -38,6 +38,8 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
         return '社区反馈';
       case 'website_feedback':
         return '网页建议';
+      case 'ban_appeal':
+        return '账户解封申诉';
       default:
         return '反馈';
     }
@@ -51,6 +53,8 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
         return <MessageSquare className="w-6 h-6 text-indigo-500" />;
       case 'website_feedback':
         return <Bug className="w-6 h-6 text-amber-500" />;
+      case 'ban_appeal':
+        return <AlertTriangle className="w-6 h-6 text-indigo-600" />;
       default:
         return <MessageSquare className="w-6 h-6 text-indigo-500" />;
     }
@@ -155,7 +159,7 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
               disabled={isSubmitting}
               className="flex-1 px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-indigo-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? '提交中...' : '提交反馈'}
+              {isSubmitting ? '提交中...' : (type === 'ban_appeal' ? '提交申诉' : '提交反馈')}
             </button>
           </div>
         </form>

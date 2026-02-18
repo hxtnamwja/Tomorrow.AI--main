@@ -42,7 +42,7 @@ router.post('/', async (req, res) => {
   try {
     const user = await getCurrentUser(req);
     if (!user) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.status(401).json({ code: 401, message: 'Not authenticated', data: null });
     }
 
     const { type, title, content, layer, communityId, demoId, demoTitle, communityName } = req.body;
@@ -58,10 +58,14 @@ router.post('/', async (req, res) => {
          demoTitle || null, communityName || null, user.id, createdAt]);
 
     const feedback = await getRow('SELECT * FROM feedback WHERE id = ?', [id]);
-    res.json(mapFeedbackRow(feedback));
+    res.json({
+      code: 200,
+      message: 'Success',
+      data: mapFeedbackRow(feedback)
+    });
   } catch (error) {
     console.error('Error creating feedback:', error);
-    res.status(500).json({ error: 'Failed to create feedback' });
+    res.status(500).json({ code: 500, message: 'Failed to create feedback', data: null });
   }
 });
 
@@ -70,7 +74,7 @@ router.get('/my', async (req, res) => {
   try {
     const user = await getCurrentUser(req);
     if (!user) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.status(401).json({ code: 401, message: 'Not authenticated', data: null });
     }
 
     const rows = await getAllRows(`
@@ -79,10 +83,14 @@ router.get('/my', async (req, res) => {
       ORDER BY created_at DESC
     `, [user.id]);
 
-    res.json(rows.map(mapFeedbackRow));
+    res.json({
+      code: 200,
+      message: 'Success',
+      data: rows.map(mapFeedbackRow)
+    });
   } catch (error) {
     console.error('Error fetching feedback:', error);
-    res.status(500).json({ error: 'Failed to fetch feedback' });
+    res.status(500).json({ code: 500, message: 'Failed to fetch feedback', data: null });
   }
 });
 
@@ -91,7 +99,7 @@ router.get('/pending', async (req, res) => {
   try {
     const user = await getCurrentUser(req);
     if (!user) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.status(401).json({ code: 401, message: 'Not authenticated', data: null });
     }
 
     let rows;
@@ -111,7 +119,11 @@ router.get('/pending', async (req, res) => {
       const communityIds = communities.map(c => c.id);
       
       if (communityIds.length === 0) {
-        return res.json([]);
+        return res.json({
+          code: 200,
+          message: 'Success',
+          data: []
+        });
       }
       
       const placeholders = communityIds.map(() => '?').join(',');
@@ -123,10 +135,14 @@ router.get('/pending', async (req, res) => {
       `, communityIds);
     }
     
-    res.json(rows.map(mapFeedbackRow));
+    res.json({
+      code: 200,
+      message: 'Success',
+      data: rows.map(mapFeedbackRow)
+    });
   } catch (error) {
     console.error('Error fetching feedback:', error);
-    res.status(500).json({ error: 'Failed to fetch feedback' });
+    res.status(500).json({ code: 500, message: 'Failed to fetch feedback', data: null });
   }
 });
 
@@ -135,7 +151,7 @@ router.put('/:id/status', async (req, res) => {
   try {
     const user = await getCurrentUser(req);
     if (!user) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.status(401).json({ code: 401, message: 'Not authenticated', data: null });
     }
 
     const { id } = req.params;
@@ -143,7 +159,7 @@ router.put('/:id/status', async (req, res) => {
 
     const feedback = await getRow('SELECT * FROM feedback WHERE id = ?', [id]);
     if (!feedback) {
-      return res.status(404).json({ error: 'Feedback not found' });
+      return res.status(404).json({ code: 404, message: 'Feedback not found', data: null });
     }
 
     // Check permissions
@@ -158,7 +174,7 @@ router.put('/:id/status', async (req, res) => {
     }
 
     if (!hasPermission) {
-      return res.status(403).json({ error: 'Not authorized' });
+      return res.status(403).json({ code: 403, message: 'Not authorized', data: null });
     }
 
     await runQuery(`
@@ -168,10 +184,14 @@ router.put('/:id/status', async (req, res) => {
     `, [status, resolution || null, user.id, Date.now(), id]);
 
     const updatedFeedback = await getRow('SELECT * FROM feedback WHERE id = ?', [id]);
-    res.json(mapFeedbackRow(updatedFeedback));
+    res.json({
+      code: 200,
+      message: 'Success',
+      data: mapFeedbackRow(updatedFeedback)
+    });
   } catch (error) {
     console.error('Error updating feedback:', error);
-    res.status(500).json({ error: 'Failed to update feedback' });
+    res.status(500).json({ code: 500, message: 'Failed to update feedback', data: null });
   }
 });
 

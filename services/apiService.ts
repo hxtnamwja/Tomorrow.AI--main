@@ -272,6 +272,25 @@ export const CommunitiesAPI = {
       method: 'DELETE',
     });
   },
+  
+  banUser: async (communityId: string, userId: string, reason?: string): Promise<void> => {
+    await apiRequest<void>(`/communities/${communityId}/ban`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, reason }),
+    });
+  },
+  
+  unbanUser: async (communityId: string, userId: string): Promise<void> => {
+    await apiRequest<void>(`/communities/${communityId}/unban`, {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    });
+  },
+  
+  getBans: async (communityId: string): Promise<any[]> => {
+    const result = await apiRequest<any[]>(`/communities/${communityId}/bans`);
+    return result.data;
+  },
 };
 
 // Categories API

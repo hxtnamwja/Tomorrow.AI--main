@@ -404,9 +404,144 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
+// Community ban endpoints
+// POST /communities/:id/ban
+router.post('/:id/ban', async (req, res) => {
+  const { userId, reason } = req.body;
+  const user = await requireUser(req, res);
+  
+  if (!user) {
+    return;
+  }
+  
+  try {
+    const community = await getRow('SELECT * FROM communities WHERE id = ?', [req.params.id]);
+    if (!community) {
+      return res.status(404).json({ code: 404, message: 'Community not found', data: null });
+    }
+    
+    // Check permissions: only creator or general admin can ban
+    if (community.creator_id !== user.id && user.role !== 'general_admin') {
+      return res.status(403).json({ code: 403, message: 'Forbidden', data: null });
+    }
+    
+    // Cannot ban creator
+    if (userId === community.creator_id) {
+      return res.status(400).json({ code: 400, message: 'Cannot ban community creator', data: null });
+    }
+    
+    const banId = 'cb-' + Date.now();
+    await runQuery(`
+      INSERT OR REPLACE INTO community_bans (id, community_id, user_id, reason, banned_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [banId, req.params.id, userId, reason || null, user.id, Date.now()]);
+    
+    // Also remove from community members if they are a member
+    await runQuery('DELETE FROM community_members WHERE community_id = ? AND user_id = ?', [req.params.id, userId]);
+    
+    res.json({ code: 200, message: 'User banned from community', data: null });
+  } catch (error) {
+    console.error('Error banning user:', error);
+    res.status(500).json({ code: 500, message: 'Server error', data: null });
+  }
+});
+
+// POST /communities/:id/unban
+router.post('/:id/unban', async (req, res) => {
+  const { userId } = req.body;
+  const user = await requireUser(req, res);
+  
+  if (!user) {
+    return;
+  }
+  
+  try {
+    const community = await getRow('SELECT * FROM communities WHERE id = ?', [req.params.id]);
+    if (!community) {
+      return res.status(404).json({ code: 404, message: 'Community not found', data: null });
+    }
+    
+    // Check permissions: only creator or general admin can unban
+    if (community.creator_id !== user.id && user.role !== 'general_admin') {
+      return res.status(403).json({ code: 403, message: 'Forbidden', data: null });
+    }
+    
+    const result = await runQuery('DELETE FROM community_bans WHERE community_id = ? AND user_id = ?', [req.params.id, userId]);
+    
+    if (result.changes === 0) {
+      return res.status(404).json({ code: 404, message: 'Ban not found', data: null });
+    }
+    
+    res.json({ code: 200, message: 'User unbanned from community', data: null });
+  } catch (error) {
+    console.error('Error unbanning user:', error);
+    res.status(500).json({ code: 500, message: 'Server error', data: null });
+  }
+});
+
+// GET /communities/:id/bans
+router.get('/:id/bans', async (req, res) => {
+  const user = await requireUser(req, res);
+  
+  if (!user) {
+    return;
+  }
+  
+  try {
+    const community = await getRow('SELECT * FROM communities WHERE id = ?', [req.params.id]);
+    if (!community) {
+      return res.status(404).json({ code: 404, message: 'Community not found', data: null });
+    }
+    
+    // Check permissions: only creator or general admin can view bans
+    if (community.creator_id !== user.id && user.role !== 'general_admin') {
+      return res.status(403).json({ code: 403, message: 'Forbidden', data: null });
+    }
+    
+    const bans = await getAllRows(`
+      SELECT cb.*, u.username
+      FROM community_bans cb
+      JOIN users u ON cb.user_id = u.id
+      WHERE cb.community_id = ?
+    `, [req.params.id]);
+    
+    res.json({ code: 200, message: 'Success', data: bans });
+  } catch (error) {
+    console.error('Error fetching bans:', error);
+    res.status(500).json({ code: 500, message: 'Server error', data: null });
+  }
+});
+
 // DELETE /communities/:id
 router.delete('/:id', async (req, res) => {
+  const user = await requireUser(req, res);
+  
+  if (!user) {
+    return;
+  }
+  
+  // Get the community first to check permissions
+  const community = await getRow('SELECT * FROM communities WHERE id = ?', [req.params.id]);
+  if (!community) {
+    return res.status(404).json({ code: 404, message: 'Community not found', data: null });
+  }
+  
+  // Only general admin or community creator can delete communities
+  if (user.role !== 'general_admin' && community.creator_id !== user.id) {
+    return res.status(403).json({ code: 403, message: 'Forbidden', data: null });
+  }
+  
   try {
+    // Delete all community members first
+    await runQuery('DELETE FROM community_members WHERE community_id = ?', [req.params.id]);
+    
+    // Delete all categories for this community
+    await runQuery('DELETE FROM categories WHERE community_id = ?', [req.params.id]);
+    
+    // Delete all demos for this community
+    await runQuery('DELETE FROM demos WHERE community_id = ?', [req.params.id]);
+    
+    // Delete the community
     const result = await runQuery('DELETE FROM communities WHERE id = ?', [req.params.id]);
     
     if (result.changes === 0) {
