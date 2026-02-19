@@ -117,8 +117,9 @@ export const DemosAPI = {
         layer: demo.layer,
         communityId: demo.communityId,
         code: demo.code,
+        originalCode: demo.originalCode,
+        config: demo.config,
         bountyId: demo.bountyId,
-        // Author is set server-side based on the authenticated user
       }),
     });
     return result.data;
@@ -526,6 +527,60 @@ export const FeedbackAPI = {
       method: 'PUT',
       body: JSON.stringify({ status, resolution }),
     });
+    return result.data;
+  },
+};
+
+// Features API - Data Storage and Multiplayer
+export const FeaturesAPI = {
+  // Data Storage
+  getData: async (demoId: string): Promise<Record<string, any>> => {
+    const result = await apiRequest<Record<string, any>>(`/features/demos/${demoId}/data`);
+    return result.data;
+  },
+
+  saveData: async (demoId: string, key: string, value: any, type?: string): Promise<void> => {
+    await apiRequest<void>(`/features/demos/${demoId}/data`, {
+      method: 'POST',
+      body: JSON.stringify({ key, value, type }),
+    });
+  },
+
+  deleteData: async (demoId: string, key: string): Promise<void> => {
+    await apiRequest<void>(`/features/demos/${demoId}/data/${key}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Multiplayer Rooms
+  getRooms: async (demoId: string): Promise<any[]> => {
+    const result = await apiRequest<any[]>(`/features/demos/${demoId}/rooms`);
+    return result.data;
+  },
+
+  createRoom: async (demoId: string, roomName: string, maxPlayers?: number): Promise<{ roomId: string }> => {
+    const result = await apiRequest<{ roomId: string }>(`/features/demos/${demoId}/rooms`, {
+      method: 'POST',
+      body: JSON.stringify({ roomName, maxPlayers }),
+    });
+    return result.data;
+  },
+
+  joinRoom: async (roomId: string): Promise<{ members: any[] }> => {
+    const result = await apiRequest<{ members: any[] }>(`/features/rooms/${roomId}/join`, {
+      method: 'POST',
+    });
+    return result.data;
+  },
+
+  leaveRoom: async (roomId: string): Promise<void> => {
+    await apiRequest<void>(`/features/rooms/${roomId}/leave`, {
+      method: 'POST',
+    });
+  },
+
+  getRoomMembers: async (roomId: string): Promise<any[]> => {
+    const result = await apiRequest<any[]>(`/features/rooms/${roomId}/members`);
     return result.data;
   },
 };

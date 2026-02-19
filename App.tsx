@@ -1893,6 +1893,7 @@ export default function App() {
                       categories={categories}
                       communities={communities}
                       currentUserId={currentUserId}
+                      role={role}
                       onSubmit={handleUpload} 
                       onCancel={() => setView('explore')}
                       bountyContext={bountyContext}
@@ -2050,6 +2051,7 @@ export default function App() {
         {selectedDemo && (
           <DemoPlayer
             demo={selectedDemo}
+            currentUserId={currentUserId}
             onClose={() => {
               setSelectedDemo(null);
               if (!wasViewingProfile) {

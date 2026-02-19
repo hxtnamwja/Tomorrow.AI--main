@@ -52,6 +52,19 @@ export interface Community {
   createdAt: number;
 }
 
+export interface DemoConfig {
+  dataStorage?: {
+    enabled: boolean;
+    autoSave?: boolean;
+    saveKeys?: Array<{ key: string; type: string }>;
+  };
+  multiplayer?: {
+    enabled: boolean;
+    maxPlayers?: number;
+    syncEvents?: Array<{ name: string; reliable?: boolean; throttle?: number }>;
+  };
+}
+
 export interface Demo {
   id: string;
   title: string;
@@ -62,6 +75,7 @@ export interface Demo {
   communityId?: string; // Crucial for isolating community content
   description: string;
   code: string; // The HTML/JS source or entry file path for multi-file projects
+  originalCode?: string; // Original code before AI configuration
   author: string;
   creatorId?: string; // User ID of the creator
   thumbnailUrl?: string; // Base64 or URL
@@ -74,6 +88,7 @@ export interface Demo {
   projectType?: 'single-file' | 'multi-file'; // Project type
   entryFile?: string; // Entry file path for multi-file projects
   projectSize?: number; // Project total size in bytes
+  config?: DemoConfig; // AI-generated configuration
 }
 
 export interface User {

@@ -125,6 +125,59 @@ const createTables = async () => {
     )
   `);
 
+  // Demo user data table
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS demo_user_data (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      demo_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      data_key TEXT NOT NULL,
+      data_value TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(demo_id, user_id, data_key)
+    )
+  `);
+
+  // Demo rooms table
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS demo_rooms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      demo_id TEXT NOT NULL,
+      creator_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      max_players INTEGER DEFAULT 4,
+      status TEXT DEFAULT 'waiting',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Demo room members table
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS demo_room_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT DEFAULT 'player',
+      joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (room_id) REFERENCES demo_rooms(id) ON DELETE CASCADE,
+      UNIQUE(room_id, user_id)
+    )
+  `);
+
+  // Demo room messages table
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS demo_room_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      message_type TEXT DEFAULT 'update',
+      message_data TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (room_id) REFERENCES demo_rooms(id) ON DELETE CASCADE
+    )
+  `);
+
   console.log('Tables created successfully');
 };
 

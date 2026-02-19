@@ -9,6 +9,14 @@ const router = Router();
 
 const mapDemoRow = (row) => {
   if (!row) return null;
+  let config = undefined;
+  try {
+    if (row.config) {
+      config = JSON.parse(row.config);
+    }
+  } catch (e) {
+    config = undefined;
+  }
   return {
     id: row.id,
     title: row.title,
@@ -17,17 +25,20 @@ const mapDemoRow = (row) => {
     layer: row.layer,
     communityId: row.community_id || undefined,
     code: row.code,
+    originalCode: row.original_code || undefined,
     author: row.author,
     creatorId: row.creator_id || undefined,
     thumbnailUrl: row.thumbnail_url || undefined,
     status: row.status,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
     rejectionReason: row.rejection_reason || undefined,
     bountyId: row.bounty_id || undefined,
     likeCount: row.like_count || 0,
     projectType: row.project_type || 'single-file',
     entryFile: row.entry_file || undefined,
-    projectSize: row.project_size || 0
+    projectSize: row.project_size || 0,
+    config
   };
 };
 
@@ -133,10 +144,9 @@ router.get('/', async (req, res) => {
 
 // POST /demos
 router.post('/', async (req, res) => {
-  const { title, description, categoryId, layer, communityId, code, bountyId } = req.body;
+  const { title, description, categoryId, layer, communityId, code, originalCode, config, bountyId } = req.body;
   
   const user = await getCurrentUser(req);
-  // Always use the current logged-in user's username as author
   const resolvedAuthor = user ? user.username : 'Anonymous';
   const creatorId = user ? user.id : null;
   
@@ -144,10 +154,11 @@ router.post('/', async (req, res) => {
   const now = Date.now();
   
   try {
+    const configJson = config ? JSON.stringify(config) : null;
     await runQuery(`
-      INSERT INTO demos (id, title, description, category_id, layer, community_id, code, author, creator_id, status, bounty_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [id, title, description, categoryId, layer, communityId || null, code, resolvedAuthor, creatorId, 'pending', bountyId || null, now]);
+      INSERT INTO demos (id, title, description, category_id, layer, community_id, code, original_code, config, author, creator_id, status, bounty_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [id, title, description, categoryId, layer, communityId || null, code, originalCode || null, configJson, resolvedAuthor, creatorId, 'pending', bountyId || null, now]);
     
     const demo = await getRow('SELECT * FROM demos WHERE id = ?', [id]);
     res.json({ code: 200, message: 'Success', data: mapDemoRow(demo) });
@@ -375,8 +386,8 @@ router.get('/liked/by/:userId', async (req, res) => {
 const upload = multer({
   dest: 'uploads/temp/',
   limits: { 
-    fileSize: 100 * 1024 * 1024, // 100MB
-    files: 1 
+    fileSize: 100 * 1024 * 1024, // 100MB per file
+    files: 2 // allow up to 2 files
   },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/zip' || 
@@ -389,37 +400,52 @@ const upload = multer({
   }
 });
 
+const uploadMultiple = upload.fields([
+  { name: 'zipFile', maxCount: 1 },
+  { name: 'originalZip', maxCount: 1 }
+]);
+
 // POST /demos/upload-zip - 上传ZIP项目
-router.post('/upload-zip', upload.single('zipFile'), async (req, res) => {
-  const { title, description, categoryId, layer, communityId } = req.body;
+router.post('/upload-zip', uploadMultiple, async (req, res) => {
+  const { title, description, categoryId, layer, communityId, config } = req.body;
   const user = await getCurrentUser(req);
   
   if (!user) {
     return res.status(401).json({ code: 401, message: 'Unauthorized', data: null });
   }
   
-  if (!req.file) {
+  if (!req.files || !req.files.zipFile) {
     return res.status(400).json({ code: 400, message: 'No file uploaded', data: null });
   }
   
   const demoId = 'demo-' + Date.now();
   const projectDir = path.join('projects', demoId);
+  const originalDir = path.join('projects', demoId, '_original');
   
   try {
-    // 创建项目目录
     fs.mkdirSync(projectDir, { recursive: true });
+    fs.mkdirSync(originalDir, { recursive: true });
     
-    // 解压ZIP文件
-    const zip = new AdmZip(req.file.path);
+    const zip = new AdmZip(req.files.zipFile[0].path);
     zip.extractAllTo(projectDir, true);
     
-    // 分析项目结构
+    if (req.files.originalZip && req.files.originalZip.length > 0) {
+      try {
+        const originalZip = new AdmZip(req.files.originalZip[0].path);
+        originalZip.extractAllTo(originalDir, true);
+      } catch (e) {
+        console.warn('Failed to save original ZIP:', e);
+      }
+    }
+    
     const projectInfo = analyzeProjectStructure(projectDir);
     
     if (!projectInfo.entryFiles.length) {
-      // 清理
       fs.rmSync(projectDir, { recursive: true });
-      fs.unlinkSync(req.file.path);
+      fs.unlinkSync(req.files.zipFile[0].path);
+      if (req.files.originalZip && req.files.originalZip.length > 0) {
+        fs.unlinkSync(req.files.originalZip[0].path);
+      }
       return res.status(400).json({ 
         code: 400, 
         message: 'ZIP中未找到HTML文件', 
@@ -427,11 +453,13 @@ router.post('/upload-zip', upload.single('zipFile'), async (req, res) => {
       });
     }
     
-    // 保存到数据库
+    const configJson = config ? JSON.stringify(config) : null;
+    const hasOriginal = req.files.originalZip && req.files.originalZip.length > 0;
+    
     await runQuery(`
       INSERT INTO demos (id, title, description, category_id, layer, community_id, 
-                       code, author, creator_id, status, project_type, entry_file, project_size, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       code, original_code, config, author, creator_id, status, project_type, entry_file, project_size, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       demoId,
       title,
@@ -439,7 +467,9 @@ router.post('/upload-zip', upload.single('zipFile'), async (req, res) => {
       categoryId,
       layer,
       communityId || null,
-      projectInfo.entryFiles[0], // 存储入口文件相对路径
+      projectInfo.entryFiles[0],
+      hasOriginal ? 'has_original_files' : null,
+      configJson,
       user.username,
       user.id,
       'pending',
@@ -449,8 +479,10 @@ router.post('/upload-zip', upload.single('zipFile'), async (req, res) => {
       Date.now()
     ]);
     
-    // 清理临时文件
-    fs.unlinkSync(req.file.path);
+    fs.unlinkSync(req.files.zipFile[0].path);
+    if (req.files.originalZip && req.files.originalZip.length > 0) {
+      fs.unlinkSync(req.files.originalZip[0].path);
+    }
     
     res.json({ 
       code: 200, 
@@ -464,13 +496,143 @@ router.post('/upload-zip', upload.single('zipFile'), async (req, res) => {
     });
   } catch (error) {
     console.error('Upload ZIP error:', error);
-    // 清理可能创建的文件
     if (fs.existsSync(projectDir)) {
       fs.rmSync(projectDir, { recursive: true });
     }
-    if (fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
+    if (req.files && req.files.zipFile && fs.existsSync(req.files.zipFile[0].path)) {
+      fs.unlinkSync(req.files.zipFile[0].path);
     }
+    if (req.files && req.files.originalZip && req.files.originalZip.length > 0 && fs.existsSync(req.files.originalZip[0].path)) {
+      fs.unlinkSync(req.files.originalZip[0].path);
+    }
+    res.status(500).json({ code: 500, message: '服务器错误', data: null });
+  }
+});
+
+// POST /demos/:id/update - 更新demo（需要审批）
+router.post('/:id/update', uploadMultiple, async (req, res) => {
+  const { title, description, config } = req.body;
+  const user = await getCurrentUser(req);
+  
+  if (!user) {
+    return res.status(401).json({ code: 401, message: 'Unauthorized', data: null });
+  }
+  
+  try {
+    const existingDemo = await getRow('SELECT * FROM demos WHERE id = ?', [req.params.id]);
+    
+    if (!existingDemo) {
+      return res.status(404).json({ code: 404, message: 'Demo not found', data: null });
+    }
+    
+    if (existingDemo.creator_id !== user.id) {
+      return res.status(403).json({ code: 403, message: 'Only author can update this demo', data: null });
+    }
+    
+    const demoId = existingDemo.id;
+    const projectDir = path.join('projects', demoId);
+    const backupDir = path.join('projects', demoId + '_backup_' + Date.now());
+    const originalDir = path.join('projects', demoId, '_original');
+    
+    if (req.files && req.files.zipFile) {
+      if (fs.existsSync(projectDir)) {
+        fs.renameSync(projectDir, backupDir);
+      }
+      
+      fs.mkdirSync(projectDir, { recursive: true });
+      
+      const zip = new AdmZip(req.files.zipFile[0].path);
+      zip.extractAllTo(projectDir, true);
+      
+      if (req.files.originalZip && req.files.originalZip.length > 0) {
+        try {
+          if (fs.existsSync(originalDir)) {
+            fs.rmSync(originalDir, { recursive: true, force: true });
+          }
+          fs.mkdirSync(originalDir, { recursive: true });
+          const originalZip = new AdmZip(req.files.originalZip[0].path);
+          originalZip.extractAllTo(originalDir, true);
+        } catch (e) {
+          console.warn('Failed to save original ZIP:', e);
+        }
+      }
+      
+      const projectInfo = analyzeProjectStructure(projectDir);
+      
+      if (!projectInfo.entryFiles.length) {
+        if (fs.existsSync(backupDir)) {
+          fs.renameSync(backupDir, projectDir);
+        }
+        fs.unlinkSync(req.files.zipFile[0].path);
+        if (req.files.originalZip && req.files.originalZip.length > 0) {
+          fs.unlinkSync(req.files.originalZip[0].path);
+        }
+        return res.status(400).json({ 
+          code: 400, 
+          message: 'ZIP中未找到HTML文件', 
+          data: null 
+        });
+      }
+      
+      const configJson = config ? JSON.stringify(config) : existingDemo.config;
+      const hasOriginal = req.files.originalZip && req.files.originalZip.length > 0;
+      
+      await runQuery(`
+        UPDATE demos 
+        SET title = ?, description = ?, code = ?, original_code = ?, config = ?, 
+            entry_file = ?, project_size = ?, status = 'pending', updated_at = ?
+        WHERE id = ?
+      `, [
+        title || existingDemo.title,
+        description || existingDemo.description,
+        projectInfo.entryFiles[0],
+        hasOriginal ? 'has_original_files' : existingDemo.original_code,
+        configJson,
+        projectInfo.entryFiles[0],
+        projectInfo.totalSize,
+        Date.now(),
+        demoId
+      ]);
+      
+      fs.unlinkSync(req.files.zipFile[0].path);
+      if (req.files.originalZip && req.files.originalZip.length > 0) {
+        fs.unlinkSync(req.files.originalZip[0].path);
+      }
+      
+      if (fs.existsSync(backupDir)) {
+        fs.rmSync(backupDir, { recursive: true, force: true });
+      }
+      
+      const updatedDemo = await getRow('SELECT * FROM demos WHERE id = ?', [demoId]);
+      res.json({ 
+        code: 200, 
+        message: '更新提交成功，等待管理员审批', 
+        data: mapDemoRow(updatedDemo)
+      });
+    } else {
+      const configJson = config ? JSON.stringify(config) : existingDemo.config;
+      
+      await runQuery(`
+        UPDATE demos 
+        SET title = ?, description = ?, config = ?, status = 'pending', updated_at = ?
+        WHERE id = ?
+      `, [
+        title || existingDemo.title,
+        description || existingDemo.description,
+        configJson,
+        Date.now(),
+        demoId
+      ]);
+      
+      const updatedDemo = await getRow('SELECT * FROM demos WHERE id = ?', [demoId]);
+      res.json({ 
+        code: 200, 
+        message: '更新提交成功，等待管理员审批', 
+        data: mapDemoRow(updatedDemo)
+      });
+    }
+  } catch (error) {
+    console.error('Update demo error:', error);
     res.status(500).json({ code: 500, message: '服务器错误', data: null });
   }
 });
@@ -533,14 +695,15 @@ router.get('/:id/files/*', async (req, res) => {
     }
     
     const filepath = req.params[0] || '';
+    const isOriginal = req.query.original === 'true';
     const projectDir = path.join('projects', demo.id);
-    const fullPath = path.join(projectDir, filepath);
+    const baseDir = isOriginal ? path.join(projectDir, '_original') : projectDir;
+    const fullPath = path.join(baseDir, filepath);
     
-    // 安全检查
     const normalizedPath = path.normalize(fullPath);
-    const normalizedProjectDir = path.normalize(projectDir);
+    const normalizedBaseDir = path.normalize(baseDir);
     
-    if (!normalizedPath.startsWith(normalizedProjectDir)) {
+    if (!normalizedPath.startsWith(normalizedBaseDir)) {
       return res.status(403).json({ code: 403, message: '访问被拒绝', data: null });
     }
     
@@ -548,12 +711,32 @@ router.get('/:id/files/*', async (req, res) => {
       return res.status(404).json({ code: 404, message: '文件不存在', data: null });
     }
     
-    // 读取文件内容
-    const content = fs.readFileSync(fullPath, 'utf-8');
     const ext = path.extname(filepath).toLowerCase();
     
-    // 根据文件类型返回
+    const mimeTypes = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.svg': 'image/svg+xml',
+      '.webp': 'image/webp',
+      '.bmp': 'image/bmp',
+      '.ico': 'image/x-icon',
+      '.woff': 'font/woff',
+      '.woff2': 'font/woff2',
+      '.ttf': 'font/ttf',
+      '.eot': 'application/vnd.ms-fontobject',
+      '.html': 'text/html',
+      '.htm': 'text/html',
+      '.css': 'text/css',
+      '.js': 'application/javascript',
+      '.json': 'application/json',
+      '.txt': 'text/plain',
+      '.md': 'text/markdown'
+    };
+    
     if (['.html', '.htm', '.css', '.js', '.json', '.txt', '.md'].includes(ext)) {
+      const content = fs.readFileSync(fullPath, 'utf-8');
       res.json({ 
         code: 200, 
         message: 'Success', 
@@ -564,11 +747,9 @@ router.get('/:id/files/*', async (req, res) => {
         } 
       });
     } else {
-      res.status(400).json({ 
-        code: 400, 
-        message: '不支持的文件类型', 
-        data: null 
-      });
+      const contentType = mimeTypes[ext] || 'application/octet-stream';
+      res.setHeader('Content-Type', contentType);
+      res.sendFile(fullPath, { root: process.cwd() });
     }
   } catch (error) {
     console.error('Get file content error:', error);
@@ -588,7 +769,7 @@ function analyzeProjectStructure(dir) {
     
     for (const entry of entries) {
       // 过滤掉系统隐藏文件和目录
-      if (entry.name === '__MACOSX' || entry.name.startsWith('.') || entry.name === '.DS_Store') {
+      if (entry.name === '__MACOSX' || entry.name.startsWith('.') || entry.name === '.DS_Store' || entry.name === '_original') {
         continue;
       }
       

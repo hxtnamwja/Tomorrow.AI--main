@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
-import { Target, Globe, Users, Check, Upload, FileCode, Play, Image as ImageIcon, X, FolderOpen, FileText, Image as ImageIcon2 } from 'lucide-react';
+import { Target, Globe, Users, Check, Upload, FileCode, Play, Image, X, FolderOpen, FileText, Sparkles, CheckCircle2, Database, Users2, RefreshCw, Zap, Bot } from 'lucide-react';
 import { Demo, Category, Subject, Bounty, Layer, Community } from '../types';
+import { AiService, GeneratedProject } from '../services/aiService';
 
 interface ProjectFile {
   type: 'file' | 'directory';
@@ -12,24 +13,30 @@ interface ProjectFile {
   children?: ProjectFile[];
 }
 
-export const UploadWizard = ({ t, categories, communities, currentUserId, onSubmit, onCancel, bountyContext }: { 
+interface SelectedFeatures {
+  dataStorage: boolean;
+  multiplayer: boolean;
+}
+
+export const UploadWizard = ({ t, categories, communities, currentUserId, role, onSubmit, onCancel, bountyContext }: { 
   t: any, 
   categories: Category[], 
   communities: Community[],
   currentUserId: string,
+  role: string,
   onSubmit: (d: Demo) => void, 
   onCancel: () => void,
   bountyContext: Bounty | null
 }) => {
   const [step, setStep] = useState(0);
   const [isPlayground, setIsPlayground] = useState(false);
-  const [editorMode, setEditorMode] = useState<'upload' | 'paste'>('upload');
-  const [projectMode, setProjectMode] = useState<'single' | 'multi'>('single');
-  const [zipFile, setZipFile] = useState<File | null>(null);
-  const [projectStructure, setProjectStructure] = useState<ProjectFile[]>([]);
+  const [editorMode, setEditorMode] = useState('upload' as 'upload' | 'paste');
+  const [projectMode, setProjectMode] = useState('single' as 'single' | 'multi');
+  const [zipFile, setZipFile] = useState(null as File | null);
+  const [projectStructure, setProjectStructure] = useState([] as ProjectFile[]);
   const [isAnalyzingZip, setIsAnalyzingZip] = useState(false);
-  const [previewContent, setPreviewContent] = useState<string>('');
-  const [entryFile, setEntryFile] = useState<string>('');
+  const [previewContent, setPreviewContent] = useState('');
+  const [entryFile, setEntryFile] = useState('');
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -40,14 +47,28 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
     code: '',
     thumbnailUrl: ''
   });
-  const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
+  const [thumbnailPreview, setThumbnailPreview] = useState(null as string | null);
 
-  // Derived state for available categories based on selection
+  const [configPhase, setConfigPhase] = useState('none' as 'select' | 'generating' | 'review' | 'none');
+  const [selectedFeatures, setSelectedFeatures] = useState({ dataStorage: false, multiplayer: false } as SelectedFeatures);
+  const [generatedProject, setGeneratedProject] = useState(null as GeneratedProject | null);
+  const [configProgress, setConfigProgress] = useState(0);
+  const [configProgressText, setConfigProgressText] = useState('');
+  const [aiActionLog, setAiActionLog] = useState([] as string[]);
+  const [liveCodePreview, setLiveCodePreview] = useState('');
+  const [selectedFileIndex, setSelectedFileIndex] = useState(0);
+  const [userRequirements, setUserRequirements] = useState('');
+  const [aiGeneratedFiles, setAiGeneratedFiles] = useState([] as { path: string; content: string }[]);
+  const [aiGeneratedEntryFile, setAiGeneratedEntryFile] = useState('');
+  const [originalCode, setOriginalCode] = useState('');
+  const [originalZipFile, setOriginalZipFile] = useState<File | null>(null);
+  const [allOriginalFiles, setAllOriginalFiles] = useState([] as { path: string; content: string }[]);
+  const [allOriginalFilesRaw, setAllOriginalFilesRaw] = useState<Map<string, { type: 'text' | 'binary', content: string | Blob }>>(new Map());
+
   const availableCategories = React.useMemo(() => {
     if (formData.layer === 'general') {
       return Object.values(Subject).map(s => ({ id: s, name: s }));
     } else if (formData.layer === 'community' && formData.communityId) {
-      // Filter categories for this specific community
       return categories.filter(c => c.communityId === formData.communityId).map(c => ({ id: c.id, name: c.name }));
     }
     return [];
@@ -77,12 +98,15 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
       const JSZip = await import('jszip');
       const zip = await JSZip.loadAsync(file);
       
+      setOriginalZipFile(file);
+      
       const structure: ProjectFile[] = [];
       const htmlFiles: { path: string; content: string }[] = [];
+      const allFiles: { path: string; content: string }[] = [];
+      const allFilesRaw: Map<string, { type: 'text' | 'binary', content: string | Blob }> = new Map();
       const imageFiles: Map<string, string> = new Map();
       
       for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
-        // 过滤掉系统隐藏文件和目录
         if (relativePath.includes('__MACOSX') || relativePath.startsWith('.') || relativePath.includes('.DS_Store')) {
           continue;
         }
@@ -103,9 +127,14 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
             size: 0
           });
           
-          // 收集图片文件并转换为DataURL
-          if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'].includes(ext ? `.${ext}` : '')) {
+          const isImage = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'].includes(ext ? `.${ext}` : '');
+          const isCodeFile = ['.html', '.htm', '.css', '.js', '.json', '.txt', '.md'].includes(ext ? `.${ext}` : '');
+          
+          if (isImage) {
             try {
+              const binaryContent = await zipEntry.async('blob');
+              allFilesRaw.set(relativePath, { type: 'binary', content: binaryContent });
+              
               const dataUrl = await zipEntry.async('base64');
               const mimeType = getImageMimeType(ext || '');
               imageFiles.set(relativePath, `data:${mimeType};base64,${dataUrl}`);
@@ -114,17 +143,31 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
             }
           }
           
-          // 收集所有HTML文件
-          if (['.html', '.htm'].includes(ext ? `.${ext}` : '')) {
+          if (isCodeFile) {
             let content = await zipEntry.async('string');
-            // 替换HTML中的图片路径为DataURL
-            content = replaceImagePaths(content, imageFiles);
-            htmlFiles.push({ path: relativePath, content });
+            allFiles.push({ path: relativePath, content });
+            allFilesRaw.set(relativePath, { type: 'text', content });
+            
+            if (['.html', '.htm'].includes(ext ? `.${ext}` : '')) {
+              content = replaceImagePaths(content, imageFiles);
+              htmlFiles.push({ path: relativePath, content });
+            }
+          }
+          
+          if (!isImage && !isCodeFile) {
+            try {
+              const binaryContent = await zipEntry.async('blob');
+              allFilesRaw.set(relativePath, { type: 'binary', content: binaryContent });
+            } catch (error) {
+              console.warn('Error processing file:', relativePath, error);
+            }
           }
         }
       }
       
-      // 优先选择根目录的HTML文件，然后选择其他HTML文件
+      setAllOriginalFiles(allFiles);
+      setAllOriginalFilesRaw(allFilesRaw);
+      
       let selectedHtml = htmlFiles.find(file => file.path.split('/').length === 1);
       if (!selectedHtml && htmlFiles.length > 0) {
         selectedHtml = htmlFiles[0];
@@ -142,7 +185,6 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
     }
   };
 
-  // 辅助函数：获取图片的MIME类型
   const getImageMimeType = (ext: string): string => {
     const mimeTypes: Record<string, string> = {
       '.png': 'image/png',
@@ -157,13 +199,10 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
     return mimeTypes[ext] || 'image/unknown';
   };
 
-  // 辅助函数：替换HTML中的图片路径为DataURL
   const replaceImagePaths = (html: string, imageFiles: Map<string, string>): string => {
     let modifiedHtml = html;
     
-    // 替换<img>标签的src属性
     modifiedHtml = modifiedHtml.replace(/<img\s+[^>]*src="([^"]+)"[^>]*>/gi, (match, src) => {
-      // 处理相对路径
       const normalizedSrc = src.replace(/^\/+/, '');
       if (imageFiles.has(normalizedSrc)) {
         const dataUrl = imageFiles.get(normalizedSrc);
@@ -172,7 +211,6 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
       return match;
     });
     
-    // 替换CSS中的background-image
     modifiedHtml = modifiedHtml.replace(/background-image:\s*url\(['"]([^'"]+)['"]\)/gi, (match, url) => {
       const normalizedUrl = url.replace(/^\/+/, '');
       if (imageFiles.has(normalizedUrl)) {
@@ -196,38 +234,154 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
     if (['.html', '.htm'].includes(extension)) return <FileCode className="w-4 h-4 text-orange-500" />;
     if (['.css'].includes(extension)) return <FileText className="w-4 h-4 text-blue-500" />;
     if (['.js', '.ts'].includes(extension)) return <FileText className="w-4 h-4 text-yellow-500" />;
-    if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'].includes(extension)) return <ImageIcon2 className="w-4 h-4 text-purple-500" />;
+    if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'].includes(extension)) return <Image className="w-4 h-4 text-purple-500" />;
     return <FileText className="w-4 h-4 text-slate-400" />;
   };
 
+  const handleStartConfig = () => {
+    const codeToSave = projectMode === 'single' ? formData.code : previewContent || '';
+    setOriginalCode(codeToSave);
+    setConfigPhase('select');
+    setSelectedFeatures({ dataStorage: false, multiplayer: false });
+  };
+
+  const handleGenerateConfig = async () => {
+    if (!selectedFeatures.dataStorage && !selectedFeatures.multiplayer) {
+      alert('请至少选择一个功能');
+      return;
+    }
+
+    setConfigPhase('generating');
+    setConfigProgress(0);
+    setConfigProgressText('初始化...');
+    setAiActionLog(['开始配置...']);
+
+    try {
+      const originalCode = projectMode === 'single' ? formData.code : previewContent || '';
+      
+      setAiActionLog(prev => [...prev, '分析原代码结构...']);
+      
+      const project = await AiService.generateEnhancedProject(
+        originalCode,
+        selectedFeatures,
+        userRequirements,
+        (step, progress, codePreview) => {
+          setConfigProgressText(step);
+          setConfigProgress(progress);
+          
+          setAiActionLog(prev => {
+            const newLog = [...prev, step];
+            if (newLog.length > 15) return newLog.slice(-15);
+            return newLog;
+          });
+          
+          if (codePreview) {
+            setLiveCodePreview(codePreview);
+          }
+        },
+        projectMode === 'multi' ? allOriginalFiles : undefined
+      );
+
+      setAiActionLog(prev => [...prev, '生成完成！', '准备预览...']);
+      setGeneratedProject(project);
+      setConfigPhase('review');
+    } catch (error) {
+      console.error('Failed to generate config:', error);
+      setConfigPhase('select');
+      setAiActionLog(prev => [...prev, '生成失败，请重试']);
+      alert('生成失败，请重试');
+    }
+  };
+
+  const handleAcceptConfig = () => {
+    console.log('=== handleAcceptConfig ===');
+    console.log('generatedProject:', generatedProject);
+    if (generatedProject) {
+      if (generatedProject.type === 'single-file' && generatedProject.code) {
+        console.log('Accepting single-file config, code length:', generatedProject.code.length);
+        setFormData(prev => ({ ...prev, code: generatedProject.code }));
+        setAiGeneratedFiles([]);
+        setAiGeneratedEntryFile('');
+      } else if (generatedProject.type === 'multi-file' && generatedProject.files) {
+        console.log('Accepting multi-file config, files count:', generatedProject.files.length);
+        console.log('Files:', generatedProject.files.map(f => ({ path: f.path, length: f.content.length })));
+        setAiGeneratedFiles(generatedProject.files);
+        setAiGeneratedEntryFile(generatedProject.entryFile || generatedProject.files[0].path);
+        const entryFile = generatedProject.files.find(f => f.path === generatedProject.entryFile) || generatedProject.files[0];
+        if (entryFile) {
+          console.log('Setting preview content from:', entryFile.path);
+          setPreviewContent(entryFile.content);
+        }
+        setProjectMode('multi');
+      }
+    }
+    setConfigPhase('none');
+  };
+
+  const handleRejectConfig = () => {
+    setConfigPhase('none');
+    setGeneratedProject(null);
+  };
+
+  const handleRegenerateConfig = () => {
+    handleGenerateConfig();
+  };
+
   const handleSubmit = async () => {
+    console.log('=== handleSubmit ===');
+    console.log('aiGeneratedFiles.length:', aiGeneratedFiles.length);
+    console.log('aiGeneratedFiles:', aiGeneratedFiles.map(f => ({ path: f.path, length: f.content.length })));
+    console.log('allOriginalFilesRaw.size:', allOriginalFilesRaw.size);
+    console.log('generatedProject:', generatedProject);
+    
     const token = localStorage.getItem('sci_demo_token');
     const apiBase = import.meta.env.VITE_API_URL || '/api/v1';
     
-    if (projectMode === 'multi' && zipFile) {
-      const formDataToSend = new FormData();
-      formDataToSend.append('zipFile', zipFile);
-      formDataToSend.append('title', formData.title);
-      formDataToSend.append('description', formData.description);
-      formDataToSend.append('categoryId', formData.categoryId);
-      formDataToSend.append('layer', formData.layer);
-      if (formData.communityId) {
-        formDataToSend.append('communityId', formData.communityId);
-      }
-      
+    let filesToUse = aiGeneratedFiles;
+    
+    if (generatedProject && generatedProject.type === 'multi-file' && generatedProject.files) {
+      console.log('Using generatedProject.files (backup mechanism)');
+      filesToUse = generatedProject.files;
+    }
+    
+    if (filesToUse.length > 0 || (generatedProject && generatedProject.type === 'multi-file')) {
       try {
-        console.log('开始上传ZIP文件...');
-        console.log('API Base:', apiBase);
-        console.log('Token:', token ? '已提供' : '未提供');
-        console.log('FormData包含:', {
-          zipFile: zipFile ? zipFile.name : '无',
-          title: formData.title,
-          description: formData.description,
-          categoryId: formData.categoryId,
-          layer: formData.layer,
-          communityId: formData.communityId
+        console.log('Creating ZIP from modified files + all original files...');
+        console.log('Using files from:', filesToUse.length > 0 ? 'aiGeneratedFiles' : 'generatedProject');
+        const JSZip = await import('jszip');
+        const zip = new JSZip.default();
+        
+        const modifiedFilesMap = new Map(filesToUse.map(f => [f.path, f.content]));
+        
+        allOriginalFilesRaw.forEach((fileData, path) => {
+          if (modifiedFilesMap.has(path)) {
+            zip.file(path, modifiedFilesMap.get(path)!);
+            console.log('Adding modified file to ZIP:', path);
+          } else {
+            zip.file(path, fileData.content);
+            console.log('Adding original file to ZIP:', path);
+          }
         });
         
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        console.log('ZIP created, size:', zipBlob.size);
+        const zipFile = new File([zipBlob], 'enhanced-project.zip', { type: 'application/zip' });
+        
+        const formDataToSend = new FormData();
+        formDataToSend.append('zipFile', zipFile);
+        formDataToSend.append('title', formData.title);
+        formDataToSend.append('description', formData.description);
+        formDataToSend.append('categoryId', formData.categoryId);
+        formDataToSend.append('layer', formData.layer);
+        if (formData.communityId) {
+          formDataToSend.append('communityId', formData.communityId);
+        }
+        if (originalZipFile) {
+          formDataToSend.append('originalZip', originalZipFile);
+          console.log('Adding originalZip:', originalZipFile.name, originalZipFile.size);
+        }
+        
+        console.log('Sending upload request...');
         const response = await fetch(`${apiBase}/demos/upload-zip`, {
           method: 'POST',
           headers: {
@@ -236,15 +390,10 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
           body: formDataToSend
         });
         
-        console.log('响应状态:', response.status);
-        console.log('响应头:', Object.fromEntries(response.headers));
-        
         const result = await response.json();
-        console.log('响应数据:', result);
+        console.log('Upload result:', result);
         
         if (result.code === 200) {
-          // For multi-file projects, the demo is already created on the backend
-          // We just need to notify the parent component to refresh data
           onSubmit({
             id: result.data.id,
             title: formData.title,
@@ -254,6 +403,7 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
             layer: formData.layer,
             communityId: formData.communityId,
             code: result.data.entryFile,
+            originalCode: originalCode || undefined,
             thumbnailUrl: formData.thumbnailUrl || undefined,
             status: 'pending',
             createdAt: Date.now(),
@@ -263,14 +413,64 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
             projectSize: result.data.size
           });
         } else {
-          console.error('上传失败，后端返回错误:', result);
           alert(`上传失败: ${result.message || '未知错误'}`);
         }
       } catch (error) {
-        console.error('上传错误:', error);
+        alert(`上传失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      }
+    } else if (projectMode === 'multi' && zipFile) {
+      const formDataToSend = new FormData();
+      formDataToSend.append('zipFile', zipFile);
+      formDataToSend.append('title', formData.title);
+      formDataToSend.append('description', formData.description);
+      formDataToSend.append('categoryId', formData.categoryId);
+      formDataToSend.append('layer', formData.layer);
+      if (formData.communityId) {
+        formDataToSend.append('communityId', formData.communityId);
+      }
+      if (originalZipFile) {
+        formDataToSend.append('originalZip', originalZipFile);
+      }
+      
+      try {
+        const response = await fetch(`${apiBase}/demos/upload-zip`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          body: formDataToSend
+        });
+        
+        const result = await response.json();
+        
+        if (result.code === 200) {
+          onSubmit({
+            id: result.data.id,
+            title: formData.title,
+            description: formData.description,
+            author: currentUserId,
+            categoryId: formData.categoryId,
+            layer: formData.layer,
+            communityId: formData.communityId,
+            code: result.data.entryFile,
+            originalCode: originalCode || undefined,
+            thumbnailUrl: formData.thumbnailUrl || undefined,
+            status: 'pending',
+            createdAt: Date.now(),
+            bountyId: bountyContext?.id,
+            projectType: 'multi-file',
+            entryFile: result.data.entryFile,
+            projectSize: result.data.size
+          });
+        } else {
+          alert(`上传失败: ${result.message || '未知错误'}`);
+        }
+      } catch (error) {
         alert(`上传失败: ${error instanceof Error ? error.message : '未知错误'}`);
       }
     } else {
+      console.log('Submitting single-file demo, code length:', formData.code.length);
+      console.log('Original code length:', originalCode.length);
       const newDemo: Demo = {
         id: `demo-${Date.now()}`,
         title: formData.title,
@@ -280,17 +480,18 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
         layer: formData.layer,
         communityId: formData.communityId,
         code: formData.code,
+        originalCode: originalCode || undefined,
         thumbnailUrl: formData.thumbnailUrl || undefined,
         status: 'pending',
         createdAt: Date.now(),
         bountyId: bountyContext?.id,
         projectType: 'single-file'
       };
+      console.log('Demo to submit:', { codeLength: newDemo.code?.length, originalCodeLength: newDemo.originalCode?.length });
       onSubmit(newDemo);
     }
   };
   
-  // If uploading for a bounty, skip step 0 as context is fixed
   React.useEffect(() => {
       if(bountyContext) {
           setStep(1);
@@ -302,12 +503,10 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
       }
   }, [bountyContext]);
 
-  // My joined communities
   const myCommunities = communities.filter(c => c.members.includes(currentUserId) && c.status === 'approved');
 
   return (
     <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden min-h-[600px] flex flex-col">
-       {/* Header */}
        <div className="px-8 py-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
          <div>
            <h2 className="text-xl font-bold text-slate-800">{t('uploadTitle')}</h2>
@@ -325,16 +524,13 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
          </div>
        </div>
 
-       {/* Body */}
        <div className="flex-1 p-8 overflow-y-auto">
          
-         {/* Step 0: Target Selection */}
          {step === 0 && (
              <div className="max-w-4xl mx-auto animate-in slide-in-from-right-8 duration-300">
                  <h3 className="text-lg font-bold text-slate-800 mb-6 text-center">{t('selectLayer')}</h3>
                  
                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                     {/* General Library Option */}
                      <div 
                         onClick={() => setFormData({...formData, layer: 'general', communityId: undefined})}
                         className={`p-6 rounded-xl border-2 cursor-pointer transition-all flex flex-col items-center text-center gap-4 ${formData.layer === 'general' && !isPlayground ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300'}`}
@@ -349,7 +545,6 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
                          {formData.layer === 'general' && !isPlayground && <div className="absolute top-4 right-4 text-indigo-600"><Check className="w-5 h-5" /></div>}
                      </div>
 
-                     {/* Community Option */}
                      <div 
                         onClick={() => setFormData({...formData, layer: 'community', communityId: myCommunities[0]?.id || ''})}
                         className={`p-6 rounded-xl border-2 cursor-pointer transition-all flex flex-col items-center text-center gap-4 ${formData.layer === 'community' ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300'}`}
@@ -364,7 +559,6 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
                          {formData.layer === 'community' && <div className="absolute top-4 right-4 text-indigo-600"><Check className="w-5 h-5" /></div>}
                      </div>
 
-                     {/* Playground Option */}
                      <div
                         onClick={() => {
                             setIsPlayground(true);
@@ -384,7 +578,6 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
                      </div>
                  </div>
 
-                 {/* If Community Selected, Show Dropdown */}
                  {formData.layer === 'community' && (
                      <div className="mt-8 animate-in fade-in slide-in-from-top-2">
                          <label className="block text-sm font-bold text-slate-700 mb-2">{t('selectCommunity')}</label>
@@ -408,7 +601,6 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
              </div>
          )}
 
-         {/* Step 1: Basic Info */}
          {step === 1 && (
            <div className="space-y-6 max-w-lg mx-auto animate-in slide-in-from-right-8 duration-300">
              <div>
@@ -451,7 +643,288 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
 
          {step === 2 && (
            <div className="h-full flex flex-col animate-in slide-in-from-right-8 duration-300">
-             {/* Project Mode Selection */}
+             {!isPlayground && configPhase === 'none' && role === 'general_admin' && (
+               <button
+                 onClick={handleStartConfig}
+                 className="mb-4 w-full py-4 px-6 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-3"
+               >
+                 <Bot className="w-6 h-6" />
+                 <span>🤖 AI 智能配置 - 让AI帮你添加功能</span>
+                 <Sparkles className="w-6 h-6" />
+               </button>
+             )}
+
+             {configPhase === 'select' && (
+               <div className="mb-4 p-6 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl border border-indigo-200">
+                 <div className="flex justify-between items-center mb-4">
+                   <h3 className="text-lg font-bold text-indigo-800 flex items-center gap-2">
+                     <Bot className="w-5 h-5" />
+                     AI智能配置
+                   </h3>
+                   <button
+                     onClick={() => setConfigPhase('none')}
+                     className="text-slate-400 hover:text-slate-600"
+                   >
+                     <X className="w-5 h-5" />
+                   </button>
+                 </div>
+                 
+                 <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                   <div className="flex items-start gap-3">
+                     <div className="text-amber-600 mt-0.5">
+                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                       </svg>
+                     </div>
+                     <div>
+                       <div className="font-medium text-amber-800">AI增强功能说明</div>
+                       <div className="text-sm text-amber-700 space-y-2">
+                         <div>这是附加的增强功能，AI会尽力实现但可能存在局限性。建议先预览结果后再决定是否使用。</div>
+                         <div className="font-medium mt-2">💡 AI增强原理：</div>
+                         <ul className="text-xs space-y-1 ml-2 list-disc list-inside">
+                           <li><strong>长期数据存储</strong>：通过集成平台提供的后端数据API，实现用户数据、进度、分数的持久化存储，支持跨设备同步</li>
+                           <li><strong>多人在线使用</strong>：利用平台的WebSocket实时通信服务，实现房间管理、联机对战、协作学习等功能</li>
+                           <li><strong>无缝集成</strong>：AI会调用window.TomorrowAI.xxx等封装好的API，确保与平台生态系统完美兼容</li>
+                         </ul>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+
+                 <p className="text-sm text-slate-600 mb-4">选择你需要的功能，AI会自动帮你修改代码：</p>
+                 
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                   <button
+                     onClick={() => setSelectedFeatures(prev => ({ ...prev, dataStorage: !prev.dataStorage }))}
+                     className={`p-4 rounded-xl border-2 transition-all ${selectedFeatures.dataStorage ? 'border-green-500 bg-green-50' : 'border-slate-200 bg-white hover:border-green-300'}`}
+                   >
+                     <div className="flex items-center gap-3">
+                       <div className={`w-10 h-10 rounded-full flex items-center justify-center ${selectedFeatures.dataStorage ? 'bg-green-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                         <Database className="w-5 h-5" />
+                       </div>
+                       <div className="text-left">
+                         <div className="font-bold text-slate-800">长期数据存储</div>
+                         <div className="text-xs text-slate-500">保存用户数据、进度、分数等</div>
+                       </div>
+                       {selectedFeatures.dataStorage && <CheckCircle2 className="w-5 h-5 text-green-500 ml-auto" />}
+                     </div>
+                   </button>
+
+                   <button
+                     onClick={() => setSelectedFeatures(prev => ({ ...prev, multiplayer: !prev.multiplayer }))}
+                     className={`p-4 rounded-xl border-2 transition-all ${selectedFeatures.multiplayer ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:border-blue-300'}`}
+                   >
+                     <div className="flex items-center gap-3">
+                       <div className={`w-10 h-10 rounded-full flex items-center justify-center ${selectedFeatures.multiplayer ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                         <Users2 className="w-5 h-5" />
+                       </div>
+                       <div className="text-left">
+                         <div className="font-bold text-slate-800">多人在线使用</div>
+                         <div className="text-xs text-slate-500">支持房间、联机对战、协作学习</div>
+                       </div>
+                       {selectedFeatures.multiplayer && <CheckCircle2 className="w-5 h-5 text-blue-500 ml-auto" />}
+                     </div>
+                   </button>
+                 </div>
+
+                 {(selectedFeatures.dataStorage || selectedFeatures.multiplayer) && (
+                   <div className="mb-4">
+                     <label className="block text-sm font-medium text-slate-700 mb-2">
+                       具体需求描述 <span className="text-slate-400">（可选但推荐）</span>
+                     </label>
+                     <textarea
+                       value={userRequirements}
+                       onChange={(e) => setUserRequirements(e.target.value)}
+                       placeholder="例如：帮我实现联机功能，使得赛车比赛可以由多人在不同的电脑通过同一个房间进行，请同步修改相关的操作规则..."
+                       className="w-full h-32 px-4 py-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-none"
+                     />
+                     <p className="text-xs text-slate-500 mt-1">
+                       描述得越具体，AI实现得越好！
+                     </p>
+                   </div>
+                 )}
+
+                 <div className="flex gap-3">
+                   <button
+                     onClick={() => setConfigPhase('none')}
+                     className="flex-1 py-2 px-4 border border-slate-300 text-slate-600 rounded-lg font-medium hover:bg-slate-50 transition-colors"
+                   >
+                     取消
+                   </button>
+                   <button
+                     onClick={handleGenerateConfig}
+                     disabled={!selectedFeatures.dataStorage && !selectedFeatures.multiplayer}
+                     className="flex-1 py-2 px-4 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                   >
+                     <Zap className="w-4 h-4" />
+                     开始配置
+                   </button>
+                 </div>
+               </div>
+             )}
+
+             {configPhase === 'generating' && (
+               <div className="mb-4 p-6 bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl border border-slate-700">
+                 <div className="flex items-center gap-3 mb-4">
+                   <div className="w-10 h-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center animate-pulse">
+                     <Bot className="w-5 h-5 text-white" />
+                   </div>
+                   <div>
+                     <div className="font-bold text-white">AI正在配置中...</div>
+                     <div className="text-sm text-slate-400">{configProgressText}</div>
+                   </div>
+                 </div>
+
+                 <div className="mb-4">
+                   <div className="flex justify-between text-xs text-slate-400 mb-1">
+                     <span>进度</span>
+                     <span>{Math.round(configProgress)}%</span>
+                   </div>
+                   <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                     <div 
+                       className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-300"
+                       style={{ width: `${configProgress}%` }}
+                     />
+                   </div>
+                 </div>
+
+                 <div className="bg-slate-800/50 rounded-lg p-3 max-h-48 overflow-y-auto">
+                   <div className="space-y-1">
+                     {aiActionLog.map((action, index) => (
+                       <div key={index} className="text-sm text-slate-300 flex items-center gap-2">
+                         <span className="text-indigo-400">→</span>
+                         {action}
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+
+                 {liveCodePreview && (
+                   <div className="mt-4">
+                     <div className="flex items-center gap-2 mb-2">
+                       <div className="text-sm font-medium text-slate-300">实时代码预览</div>
+                       <span className="text-xs text-slate-500">（{liveCodePreview.length} 字符）</span>
+                     </div>
+                     <div className="bg-slate-900 rounded-lg p-3 max-h-64 overflow-y-auto">
+                       <pre className="text-xs text-slate-400 font-mono whitespace-pre-wrap">
+                         {liveCodePreview.substring(0, 3000)}
+                         {liveCodePreview.length > 3000 && '\n...'}
+                       </pre>
+                     </div>
+                   </div>
+                 )}
+               </div>
+             )}
+
+             {configPhase === 'review' && generatedProject && (
+               <div className="mb-4 p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200">
+                 <div className="flex items-center gap-3 mb-4">
+                   <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center">
+                     <CheckCircle2 className="w-5 h-5 text-white" />
+                   </div>
+                   <div>
+                     <div className="font-bold text-green-800">配置完成！</div>
+                     <div className="text-sm text-green-600">{generatedProject.explanation}</div>
+                   </div>
+                 </div>
+
+                 {generatedProject.changes && generatedProject.changes.length > 0 && (
+                   <div className="mb-4">
+                     <div className="text-sm font-medium text-green-800 mb-2">改进点：</div>
+                     <ul className="space-y-1">
+                       {generatedProject.changes.map((change, index) => (
+                         <li key={index} className="text-sm text-green-700 flex items-center gap-2">
+                           <Check className="w-4 h-4" />
+                           {change}
+                         </li>
+                       ))}
+                     </ul>
+                   </div>
+                 )}
+
+                 {generatedProject.type === 'multi-file' && generatedProject.files && (
+                   <div className="mb-4">
+                     <div className="text-sm font-medium text-green-800 mb-2">文件结构：</div>
+                     <div className="flex gap-4">
+                       <div className="w-1/3">
+                         <div className="bg-white rounded-lg border border-green-200 overflow-hidden">
+                           {generatedProject.files.map((file, index) => (
+                             <button
+                               key={index}
+                               onClick={() => setSelectedFileIndex(index)}
+                               className={`w-full text-left px-4 py-3 text-sm transition-colors ${
+                                 selectedFileIndex === index
+                                   ? 'bg-green-100 text-green-800 font-medium'
+                                   : 'text-slate-600 hover:bg-slate-50'
+                               }`}
+                             >
+                               <div className="flex items-center justify-between">
+                                 <span className="truncate">{file.path}</span>
+                                 <span className="text-xs text-slate-400 ml-2">
+                                   {(file.content.length / 1024).toFixed(1)} KB
+                                 </span>
+                               </div>
+                             </button>
+                           ))}
+                         </div>
+                       </div>
+                       <div className="flex-1">
+                         <div className="bg-slate-900 rounded-lg overflow-hidden">
+                           <div className="bg-slate-800 px-4 py-2 text-xs text-slate-400 border-b border-slate-700">
+                             {generatedProject.files[selectedFileIndex]?.path}
+                           </div>
+                           <div className="p-4 max-h-96 overflow-y-auto">
+                             <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap">
+                               {generatedProject.files[selectedFileIndex]?.content}
+                             </pre>
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+                   </div>
+                 )}
+
+                 {generatedProject.type === 'single-file' && generatedProject.code && (
+                   <div className="mb-4">
+                     <div className="text-sm font-medium text-green-800 mb-2">完整代码：</div>
+                     <div className="bg-slate-900 rounded-lg overflow-hidden">
+                       <div className="bg-slate-800 px-4 py-2 text-xs text-slate-400 border-b border-slate-700">
+                         index.html
+                       </div>
+                       <div className="p-4 max-h-96 overflow-y-auto">
+                         <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap">
+                           {generatedProject.code}
+                         </pre>
+                       </div>
+                     </div>
+                   </div>
+                 )}
+
+                 <div className="flex gap-3">
+                   <button
+                     onClick={handleRejectConfig}
+                     className="flex-1 py-2 px-4 border border-slate-300 text-slate-600 rounded-lg font-medium hover:bg-slate-50 transition-colors"
+                   >
+                     拒绝配置
+                   </button>
+                   <button
+                     onClick={handleRegenerateConfig}
+                     className="flex-1 py-2 px-4 border border-indigo-300 text-indigo-600 rounded-lg font-medium hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2"
+                   >
+                     <RefreshCw className="w-4 h-4" />
+                     重新生成
+                   </button>
+                   <button
+                     onClick={handleAcceptConfig}
+                     className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                   >
+                     <CheckCircle2 className="w-4 h-4" />
+                     接受配置
+                   </button>
+                 </div>
+               </div>
+             )}
+
              <div className="flex gap-4 mb-4">
                <button 
                  onClick={() => {
@@ -473,7 +946,6 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
                </button>
              </div>
 
-             {/* Single File Mode */}
              {projectMode === 'single' && (
                <>
                  <div className="flex gap-4 mb-4">
@@ -496,7 +968,6 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
                  </div>
 
                  <div className="flex-1 relative min-h-[300px]">
-                    {/* File Upload Mode */}
                     <div className={`absolute inset-0 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 transition-all ${editorMode === 'upload' ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none z-0'}`}>
                         <div className="text-center p-8 w-full flex flex-col items-center justify-center">
                             <div className="w-16 h-16 rounded-full bg-indigo-100 flex items-center justify-center mb-4 text-indigo-600">
@@ -516,7 +987,7 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
                                     const reader = new FileReader();
                                     reader.onload = (ev) => {
                                         setFormData({...formData, code: ev.target?.result as string});
-                                        setEditorMode('paste'); // Auto switch to preview/edit after upload
+                                        setEditorMode('paste');
                                     };
                                     reader.readAsText(file);
                                 }
@@ -533,7 +1004,6 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
                         </div>
                     </div>
 
-                    {/* Paste Code Mode (Textarea) */}
                     <textarea 
                       value={formData.code} 
                       onChange={e => setFormData({...formData, code: e.target.value})}
@@ -545,7 +1015,6 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
                </>
              )}
 
-             {/* Multi File Mode */}
              {projectMode === 'multi' && (
                <div className="flex-1 flex flex-col gap-4">
                  {!zipFile ? (
@@ -668,10 +1137,9 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
                 )}
              </div>
              
-             {/* Thumbnail Upload Section */}
              <div className="mt-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
                <div className="flex items-center gap-2 mb-3">
-                 <ImageIcon className="w-4 h-4 text-slate-500" />
+                 <Image className="w-4 h-4 text-slate-500" />
                  <span className="text-sm font-medium text-slate-700">{t('thumbnail')}（{t('thumbnailOptional')}）</span>
                </div>
                
@@ -715,7 +1183,7 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
               <div className="flex-1 min-h-[400px] border-2 border-slate-200 border-dashed rounded-xl bg-white overflow-hidden relative">
                  {projectMode === 'single' ? (
                    <iframe 
-                     key={formData.code.length + step}
+                     key={`single-${formData.code.length}-${Date.now()}`}
                      srcDoc={formData.code} 
                      className="w-full h-full absolute inset-0 border-0" 
                      title={t('stepPreview')} 
@@ -723,7 +1191,7 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
                    />
                  ) : previewContent ? (
                    <iframe 
-                     key={previewContent.length + step}
+                     key={`multi-${previewContent.length}-${Date.now()}`}
                      srcDoc={previewContent} 
                      className="w-full h-full absolute inset-0 border-0" 
                      title={t('stepPreview')} 
@@ -758,7 +1226,6 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
          )}
        </div>
 
-       {/* Footer */}
        <div className="px-8 py-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
          <button 
            onClick={() => {
@@ -798,3 +1265,4 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, onSubm
     </div>
   );
 };
+

@@ -6,12 +6,13 @@ import { AiService } from '../services/aiService';
 import { DemosAPI } from '../services/apiService';
 import { AIMessageContent } from './AIMessageContent';
 
-export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewUserProfile, allUsers, onPublishToOther, onReportDemo }: { demo: Demo, onClose: () => void, t: any, onOpenDemo?: (demoId: string) => void, onLikeChange?: (demoId: string, likeCount: number, userLiked: boolean) => void, onViewUserProfile?: (userId: string) => void, allUsers?: any[], onPublishToOther?: () => void, onReportDemo?: () => void }) => {
+export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLikeChange, onViewUserProfile, allUsers, onPublishToOther, onReportDemo }: { demo: Demo, currentUserId?: string, onClose: () => void, t: any, onOpenDemo?: (demoId: string) => void, onLikeChange?: (demoId: string, likeCount: number, userLiked: boolean) => void, onViewUserProfile?: (userId: string) => void, allUsers?: any[], onPublishToOther?: () => void, onReportDemo?: () => void }) => {
   const [activeTab, setActiveTab] = useState<'concept' | 'code' | 'ai'>('concept');
   const [iframeKey, setIframeKey] = useState(0);
   const [aiMessages, setAiMessages] = useState<{role: 'user' | 'model', text: string}[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [codeViewMode, setCodeViewMode] = useState<'modified' | 'original'>('modified');
 
   // Check if this is a multi-file project
   const isMultiFile = demo.projectType === 'multi-file';
@@ -26,11 +27,248 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
     return undefined;
   }, [demo, isMultiFile]);
 
+  // Inject TomorrowAI script into single-file demo code
+  const getDemoCodeWithInjection = useMemo(() => {
+    if (isMultiFile || !demo.code) return undefined;
+    
+    const apiBase = import.meta.env.VITE_API_URL || '/api/v1';
+    const baseUrl = apiBase.replace('/api/v1', '');
+    const wsBase = baseUrl.replace('http', 'ws');
+    
+    const injectionScript = `
+<script>
+(function() {
+  const API_BASE = '${apiBase}';
+  const WS_BASE = '${wsBase}';
+  
+  window.TomorrowAI = {
+    demoId: '${demo.id}',
+    apiBase: API_BASE,
+    getToken: function() {
+      return localStorage.getItem('sci_demo_token') || '';
+    },
+    storage: {
+      set: async function(key, value) {
+        try {
+          const token = window.TomorrowAI.getToken();
+          const response = await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/data', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({ key, value })
+          });
+          return await response.json();
+        } catch (e) {
+          console.warn('Failed to save data:', e);
+        }
+      },
+      get: async function(key) {
+        try {
+          const token = window.TomorrowAI.getToken();
+          const response = await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/data/' + key, {
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          const result = await response.json();
+          return result.data;
+        } catch (e) {
+          console.warn('Failed to get data:', e);
+          return null;
+        }
+      },
+      getAll: async function() {
+        try {
+          const token = window.TomorrowAI.getToken();
+          const response = await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/data', {
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          const result = await response.json();
+          return result.data;
+        } catch (e) {
+          console.warn('Failed to get all data:', e);
+          return {};
+        }
+      }
+    },
+    rooms: {
+      list: async function() {
+        try {
+          const response = await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/rooms');
+          const result = await response.json();
+          return result.data || [];
+        } catch (e) {
+          console.warn('Failed to list rooms:', e);
+          return [];
+        }
+      },
+      create: async function(title, maxPlayers) {
+        try {
+          const token = window.TomorrowAI.getToken();
+          const response = await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/rooms', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({ title, maxPlayers: maxPlayers || 4 })
+          });
+          const result = await response.json();
+          return result.data;
+        } catch (e) {
+          console.warn('Failed to create room:', e);
+          return null;
+        }
+      },
+      join: async function(roomId) {
+        try {
+          const token = window.TomorrowAI.getToken();
+          await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/rooms/' + roomId + '/join', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          return true;
+        } catch (e) {
+          console.warn('Failed to join room:', e);
+          return false;
+        }
+      },
+      leave: async function(roomId) {
+        try {
+          const token = window.TomorrowAI.getToken();
+          await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/rooms/' + roomId + '/leave', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          return true;
+        } catch (e) {
+          console.warn('Failed to leave room:', e);
+          return false;
+        }
+      },
+      sendMessage: async function(roomId, type, data) {
+        try {
+          const token = window.TomorrowAI.getToken();
+          await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/rooms/' + roomId + '/message', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({ type, data })
+          });
+        } catch (e) {
+          console.warn('Failed to send message:', e);
+        }
+      },
+      getMessages: async function(roomId, since) {
+        try {
+          let url = API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/rooms/' + roomId + '/messages';
+          if (since) {
+            url += '?since=' + encodeURIComponent(since);
+          }
+          const response = await fetch(url);
+          const result = await response.json();
+          return result.data || [];
+        } catch (e) {
+          console.warn('Failed to get messages:', e);
+          return [];
+        }
+      }
+    },
+    WebSocket: class {
+      constructor(demoId, roomId, userId) {
+        this.ws = null;
+        this.demoId = demoId;
+        this.roomId = roomId;
+        this.userId = userId;
+        this.onMessage = null;
+        this.onUserJoined = null;
+        this.onUserLeft = null;
+        this.onConnected = null;
+      }
+      connect() {
+        const wsUrl = WS_BASE + '/ws?demoId=' + this.demoId + '&roomId=' + this.roomId + '&userId=' + this.userId;
+        this.ws = new WebSocket(wsUrl);
+        const self = this;
+        this.ws.onopen = function() {
+          console.log('WebSocket connected');
+          if (self.onConnected) self.onConnected();
+        };
+        this.ws.onmessage = function(event) {
+          try {
+            const msg = JSON.parse(event.data);
+            switch(msg.type) {
+              case 'connected':
+                break;
+              case 'broadcast':
+                if (self.onMessage) self.onMessage(msg.data);
+                break;
+              case 'userJoined':
+                if (self.onUserJoined) self.onUserJoined(msg);
+                break;
+              case 'userLeft':
+                if (self.onUserLeft) self.onUserLeft(msg);
+                break;
+            }
+          } catch (e) {
+            console.error('WebSocket message error:', e);
+          }
+        };
+        this.ws.onclose = function() {
+          console.log('WebSocket disconnected');
+        };
+        this.ws.onerror = function(error) {
+          console.error('WebSocket error:', error);
+        };
+      }
+      send(data) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ type: 'broadcast', data: data }));
+        }
+      }
+      disconnect() {
+        if (this.ws) {
+          this.ws.close();
+          this.ws = null;
+        }
+      }
+    }
+  };
+})();
+</script>`;
+    
+    // Inject the script before </body> or </html>
+    let content = demo.code;
+    const bodyEndIndex = content.lastIndexOf('</body>');
+    if (bodyEndIndex !== -1) {
+      content = content.slice(0, bodyEndIndex) + injectionScript + content.slice(bodyEndIndex);
+    } else {
+      const htmlEndIndex = content.lastIndexOf('</html>');
+      if (htmlEndIndex !== -1) {
+        content = content.slice(0, htmlEndIndex) + injectionScript + content.slice(htmlEndIndex);
+      } else {
+        content = content + injectionScript;
+      }
+    }
+    
+    return content;
+  }, [demo, isMultiFile]);
+
   // Multi-file project state
   const [projectStructure, setProjectStructure] = useState<any[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>('');
   const [loadingStructure, setLoadingStructure] = useState(false);
+  const [hasOriginalVersion, setHasOriginalVersion] = useState(false);
+  
+  // 修改功能状态
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editZipFile, setEditZipFile] = useState<File | null>(null);
+  const [editOriginalZipFile, setEditOriginalZipFile] = useState<File | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
 
   // Load project structure for multi-file projects
   useEffect(() => {
@@ -38,6 +276,63 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
       loadProjectStructure();
     }
   }, [demo.id, isMultiFile]);
+  
+  // 初始化编辑表单
+  useEffect(() => {
+    if (isEditModalOpen) {
+      setEditTitle(demo.title);
+      setEditDescription(demo.description || '');
+    }
+  }, [isEditModalOpen, demo]);
+  
+  const handleEditSubmit = async () => {
+    if (!editTitle.trim()) {
+      alert('请输入标题');
+      return;
+    }
+    
+    setEditLoading(true);
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || '/api/v1';
+      const formData = new FormData();
+      
+      formData.append('title', editTitle);
+      formData.append('description', editDescription);
+      
+      if (editZipFile) {
+        formData.append('zipFile', editZipFile);
+      }
+      if (editOriginalZipFile) {
+        formData.append('originalZip', editOriginalZipFile);
+      }
+      
+      const token = localStorage.getItem('sci_demo_token') || '';
+      const response = await fetch(`${apiBase}/demos/${demo.id}/update`, {
+        method: 'POST',
+        headers: token ? {
+          'Authorization': 'Bearer ' + token
+        } : {},
+        body: formData
+      });
+      
+      const result = await response.json();
+      
+      if (result.code === 200) {
+        alert('更新提交成功！等待管理员审批。');
+        setIsEditModalOpen(false);
+        setEditZipFile(null);
+        setEditOriginalZipFile(null);
+        onClose();
+      } else {
+        alert(result.message || '更新失败');
+      }
+    } catch (error) {
+      console.error('Edit error:', error);
+      alert('更新失败');
+    } finally {
+      setEditLoading(false);
+    }
+  };
 
   // 辅助函数：将扁平的文件列表转换为树状结构
   const buildTreeStructure = (files: any[]): any[] => {
@@ -120,7 +415,7 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
         {items.map((item, index) => (
           <li key={index}>
             <button
-              onClick={() => item.type === 'file' && loadFileContent(item.path)}
+              onClick={() => item.type === 'file' && loadFileContent(item.path, codeViewMode === 'original')}
               disabled={item.type === 'directory'}
               className={`w-full text-left p-2 rounded-lg text-xs transition-colors ${selectedFile === item.path
                 ? 'bg-indigo-100 text-indigo-700'
@@ -153,6 +448,19 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
       const result = await response.json();
       if (result.code === 200) {
         setProjectStructure(result.data.structure || []);
+        
+        if (result.data.structure && result.data.structure.length > 0) {
+          const firstFile = result.data.structure.find(f => f.type === 'file');
+          if (firstFile) {
+            try {
+              const testResponse = await fetch(`${apiBase}/demos/${demo.id}/files/${firstFile.path}?original=true`);
+              const testResult = await testResponse.json();
+              setHasOriginalVersion(testResult.code === 200);
+            } catch (e) {
+              setHasOriginalVersion(false);
+            }
+          }
+        }
       }
     } catch (error) {
       console.error('Error loading project structure:', error);
@@ -161,10 +469,11 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
     }
   };
 
-  const loadFileContent = async (filepath: string) => {
+  const loadFileContent = async (filepath: string, isOriginal = false) => {
     try {
       const apiBase = import.meta.env.VITE_API_URL || '/api/v1';
-      const response = await fetch(`${apiBase}/demos/${demo.id}/files/${filepath}`);
+      const url = `${apiBase}/demos/${demo.id}/files/${filepath}${isOriginal ? '?original=true' : ''}`;
+      const response = await fetch(url);
       const result = await response.json();
       if (result.code === 200) {
         setFileContent(result.data.content);
@@ -174,6 +483,12 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
       console.error('Error loading file content:', error);
     }
   };
+  
+  useEffect(() => {
+    if (selectedFile) {
+      loadFileContent(selectedFile, codeViewMode === 'original');
+    }
+  }, [codeViewMode, selectedFile]);
 
   // Resize State
   const [sidebarWidth, setSidebarWidth] = useState(400);
@@ -564,7 +879,7 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
               <iframe
                 key={iframeKey}
                 src={previewUrl}
-                srcDoc={!isMultiFile ? demo.code : undefined}
+                srcDoc={getDemoCodeWithInjection}
                 className="border-0 block w-full h-full"
                 title={demo.title}
                 sandbox="allow-scripts allow-popups allow-modals allow-same-origin"
@@ -774,6 +1089,16 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
                    </button>
                  )}
                  
+                 {currentUserId && demo.creatorId === currentUserId && (
+                   <button
+                     onClick={() => setIsEditModalOpen(true)}
+                     className="w-full py-2 px-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg text-sm font-medium hover:from-amber-600 hover:to-orange-600 transition-all flex items-center justify-center gap-2 shadow-sm mt-3"
+                   >
+                     <Sparkles className="w-4 h-4" />
+                     修改程序
+                   </button>
+                 )}
+                 
                  {onReportDemo && (
                    <button
                      onClick={onReportDemo}
@@ -797,14 +1122,79 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
 
             {activeTab === 'code' && (
               <div className="animate-in fade-in slide-in-from-right-4 duration-300 h-full flex flex-col">
+                {(demo.originalCode && demo.originalCode !== 'has_original_files' || hasOriginalVersion) && (
+                  <div className="mb-4 p-3 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-bold text-indigo-800 flex items-center gap-2">
+                        <Sparkles className="w-4 h-4" />
+                        AI配置版本
+                      </span>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <button
+                        onClick={() => setCodeViewMode('modified')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                          codeViewMode === 'modified'
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                        }`}
+                      >
+                        修改后代码
+                      </button>
+                      <button
+                        onClick={() => setCodeViewMode('original')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                          codeViewMode === 'original'
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                        }`}
+                      >
+                        原始代码
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
                 {isMultiFile ? (
                   <>
+                    {(demo.originalCode && demo.originalCode !== 'has_original_files' || hasOriginalVersion) && (
+                      <div className="mb-4 p-3 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-bold text-indigo-800 flex items-center gap-2">
+                            <Sparkles className="w-4 h-4" />
+                            AI配置版本
+                          </span>
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                          <button
+                            onClick={() => setCodeViewMode('modified')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                              codeViewMode === 'modified'
+                                ? 'bg-indigo-600 text-white shadow-sm'
+                                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                            }`}
+                          >
+                            修改后代码
+                          </button>
+                          <button
+                            onClick={() => setCodeViewMode('original')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                              codeViewMode === 'original'
+                                ? 'bg-indigo-600 text-white shadow-sm'
+                                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                            }`}
+                          >
+                            原始代码
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-bold text-slate-500 uppercase">{t('projectStructure')}</span>
                       <span className="text-xs text-slate-400">{t('readOnly')}</span>
                     </div>
                     <div className="flex-1 flex gap-4 overflow-hidden">
-                      {/* File List */}
                       <div className="w-1/3 border border-slate-200 rounded-xl overflow-hidden flex flex-col">
                         <div className="p-2 bg-slate-50 border-b border-slate-200">
                           <p className="text-xs font-medium text-slate-600">Files</p>
@@ -821,7 +1211,6 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
                           )}
                         </div>
                       </div>
-                      {/* File Content */}
                       <div className="flex-1 border border-slate-200 rounded-xl overflow-hidden flex flex-col">
                         <div className="p-2 bg-slate-50 border-b border-slate-200">
                           <p className="text-xs font-medium text-slate-600 truncate">{selectedFile || 'Select a file'}</p>
@@ -839,7 +1228,9 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
                       <span className="text-xs text-slate-400">{t('readOnly')}</span>
                     </div>
                     <pre className="text-xs font-mono bg-slate-900 text-slate-300 p-4 rounded-xl overflow-x-auto flex-1 shadow-inner border border-slate-700">
-                      {demo.code}
+                      {codeViewMode === 'original' && demo.originalCode && demo.originalCode !== 'has_original_files' 
+                        ? demo.originalCode 
+                        : demo.code}
                     </pre>
                   </>
                 )}
@@ -928,6 +1319,89 @@ export const DemoPlayer = ({ demo, onClose, t, onOpenDemo, onLikeChange, onViewU
           </div>
         </div>
       </div>
+      
+      {/* 编辑弹窗 */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-slate-800">修改程序</h3>
+                <button
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">标题</label>
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">描述</label>
+                  <textarea
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    rows={4}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">上传新的文件（可选）</label>
+                  <input
+                    type="file"
+                    accept=".zip,.html,.htm"
+                    onChange={(e) => setEditZipFile(e.target.files?.[0] || null)}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                  {editZipFile && (
+                    <p className="text-xs text-slate-500 mt-1">已选择: {editZipFile.name}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">上传原始文件（可选）</label>
+                  <input
+                    type="file"
+                    accept=".zip"
+                    onChange={(e) => setEditOriginalZipFile(e.target.files?.[0] || null)}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                  {editOriginalZipFile && (
+                    <p className="text-xs text-slate-500 mt-1">已选择: {editOriginalZipFile.name}</p>
+                  )}
+                </div>
+                
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={() => setIsEditModalOpen(false)}
+                    className="flex-1 py-2 px-4 bg-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-300 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handleEditSubmit}
+                    disabled={editLoading}
+                    className="flex-1 py-2 px-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg font-medium hover:from-amber-600 hover:to-orange-600 transition-all disabled:opacity-50"
+                  >
+                    {editLoading ? '提交中...' : '提交更新'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 };

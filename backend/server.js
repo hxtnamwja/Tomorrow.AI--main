@@ -1,7 +1,10 @@
+
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import http from 'http';
 import { initDatabase, getDatabase } from './database.js';
+import { setupWebSocket } from './websocket.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -15,6 +18,8 @@ import aiRoutes from './routes/ai.js';
 import usersRoutes from './routes/users.js';
 import publicationsRoutes from './routes/publications.js';
 import feedbackRoutes from './routes/feedback.js';
+import featuresRoutes from './routes/features.js';
+import demoFeaturesRoutes from './routes/demoFeatures.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -47,10 +52,259 @@ app.use((req, res, next) => {
   next();
 });
 
-// 静态文件服务 - 用于多文件项目的资源
-app.use('/projects', express.static(projectsDir, {
+// 静态文件服务 - 用于多文件项目的资源，自动注入TomorrowAI脚本
+app.use('/projects', async (req, res, next) => {
+  const requestedPath = req.path;
+  const fullPath = path.join(projectsDir, requestedPath);
+  const ext = path.extname(fullPath).toLowerCase();
+  
+  if (ext === '.html' || ext === '.htm') {
+    try {
+      if (fs.existsSync(fullPath)) {
+        let content = fs.readFileSync(fullPath, 'utf-8');
+        
+        // 从URL中提取demoId（路径格式: /projects/demo-xxx/index.html）
+        const pathParts = requestedPath.split('/');
+        let demoId = '';
+        if (pathParts.length >= 2) {
+          demoId = pathParts[1];
+        }
+        
+        // 注入TomorrowAI脚本
+        const apiBase = (process.env.BASE_URL || 'http://localhost:3001') + '/api/v1';
+        const wsBase = (process.env.BASE_URL || 'ws://localhost:3001').replace('http', 'ws');
+        
+        const injectionScript = `
+<script>
+(function() {
+  const API_BASE = '${apiBase}';
+  const WS_BASE = '${wsBase}';
+  
+  window.TomorrowAI = {
+    demoId: '${demoId}',
+    apiBase: API_BASE,
+    getToken: function() {
+      return localStorage.getItem('sci_demo_token') || '';
+    },
+    storage: {
+      set: async function(key, value) {
+        try {
+          const token = window.TomorrowAI.getToken();
+          const response = await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/data', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({ key, value })
+          });
+          return await response.json();
+        } catch (e) {
+          console.warn('Failed to save data:', e);
+        }
+      },
+      get: async function(key) {
+        try {
+          const token = window.TomorrowAI.getToken();
+          const response = await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/data/' + key, {
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          const result = await response.json();
+          return result.data;
+        } catch (e) {
+          console.warn('Failed to get data:', e);
+          return null;
+        }
+      },
+      getAll: async function() {
+        try {
+          const token = window.TomorrowAI.getToken();
+          const response = await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/data', {
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          const result = await response.json();
+          return result.data;
+        } catch (e) {
+          console.warn('Failed to get all data:', e);
+          return {};
+        }
+      }
+    },
+    rooms: {
+      list: async function() {
+        try {
+          const response = await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/rooms');
+          const result = await response.json();
+          return result.data || [];
+        } catch (e) {
+          console.warn('Failed to list rooms:', e);
+          return [];
+        }
+      },
+      create: async function(title, maxPlayers) {
+        try {
+          const token = window.TomorrowAI.getToken();
+          const response = await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/rooms', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({ title, maxPlayers: maxPlayers || 4 })
+          });
+          const result = await response.json();
+          return result.data;
+        } catch (e) {
+          console.warn('Failed to create room:', e);
+          return null;
+        }
+      },
+      join: async function(roomId) {
+        try {
+          const token = window.TomorrowAI.getToken();
+          await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/rooms/' + roomId + '/join', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          return true;
+        } catch (e) {
+          console.warn('Failed to join room:', e);
+          return false;
+        }
+      },
+      leave: async function(roomId) {
+        try {
+          const token = window.TomorrowAI.getToken();
+          await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/rooms/' + roomId + '/leave', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          return true;
+        } catch (e) {
+          console.warn('Failed to leave room:', e);
+          return false;
+        }
+      },
+      sendMessage: async function(roomId, type, data) {
+        try {
+          const token = window.TomorrowAI.getToken();
+          await fetch(API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/rooms/' + roomId + '/message', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({ type, data })
+          });
+        } catch (e) {
+          console.warn('Failed to send message:', e);
+        }
+      },
+      getMessages: async function(roomId, since) {
+        try {
+          let url = API_BASE + '/demo-features/' + window.TomorrowAI.demoId + '/rooms/' + roomId + '/messages';
+          if (since) {
+            url += '?since=' + encodeURIComponent(since);
+          }
+          const response = await fetch(url);
+          const result = await response.json();
+          return result.data || [];
+        } catch (e) {
+          console.warn('Failed to get messages:', e);
+          return [];
+        }
+      }
+    },
+    WebSocket: class {
+      constructor(demoId, roomId, userId) {
+        this.ws = null;
+        this.demoId = demoId;
+        this.roomId = roomId;
+        this.userId = userId;
+        this.onMessage = null;
+        this.onUserJoined = null;
+        this.onUserLeft = null;
+        this.onConnected = null;
+      }
+      connect() {
+        const wsUrl = WS_BASE + '/ws?demoId=' + this.demoId + '&roomId=' + this.roomId + '&userId=' + this.userId;
+        this.ws = new WebSocket(wsUrl);
+        const self = this;
+        this.ws.onopen = function() {
+          console.log('WebSocket connected');
+          if (self.onConnected) self.onConnected();
+        };
+        this.ws.onmessage = function(event) {
+          try {
+            const msg = JSON.parse(event.data);
+            switch(msg.type) {
+              case 'connected':
+                break;
+              case 'broadcast':
+                if (self.onMessage) self.onMessage(msg.data);
+                break;
+              case 'userJoined':
+                if (self.onUserJoined) self.onUserJoined(msg);
+                break;
+              case 'userLeft':
+                if (self.onUserLeft) self.onUserLeft(msg);
+                break;
+            }
+          } catch (e) {
+            console.error('WebSocket message error:', e);
+          }
+        };
+        this.ws.onclose = function() {
+          console.log('WebSocket disconnected');
+        };
+        this.ws.onerror = function(error) {
+          console.error('WebSocket error:', error);
+        };
+      }
+      send(data) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ type: 'broadcast', data: data }));
+        }
+      }
+      disconnect() {
+        if (this.ws) {
+          this.ws.close();
+          this.ws = null;
+        }
+      }
+    }
+  };
+})();
+</script>
+`;
+        
+        // 在</head>或</body>结束前注入
+        const bodyEndIndex = content.lastIndexOf('</body>');
+        if (bodyEndIndex !== -1) {
+          content = content.slice(0, bodyEndIndex) + injectionScript + content.slice(bodyEndIndex);
+        } else {
+          const htmlEndIndex = content.lastIndexOf('</html>');
+          if (htmlEndIndex !== -1) {
+            content = content.slice(0, htmlEndIndex) + injectionScript + content.slice(htmlEndIndex);
+          } else {
+            content = content + injectionScript;
+          }
+        }
+        
+        res.setHeader('Content-Type', 'text/html');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.send(content);
+        return;
+      }
+    } catch (e) {
+      console.error('Error processing HTML file:', e);
+    }
+  }
+  
+  // 对于非HTML文件，继续使用静态服务
+  next();
+}, express.static(projectsDir, {
   setHeaders: (res, filePath) => {
-    // 设置正确的MIME类型
     const ext = path.extname(filePath).toLowerCase();
     const mimeTypes = {
       '.png': 'image/png',
@@ -76,10 +330,7 @@ app.use('/projects', express.static(projectsDir, {
       res.setHeader('Content-Type', mimeTypes[ext]);
     }
     
-    // 缓存控制
-    res.setHeader('Cache-Control', 'public, max-age=86400'); // 1天
-    
-    // 安全设置
+    res.setHeader('Cache-Control', 'public, max-age=86400');
     res.setHeader('X-Content-Type-Options', 'nosniff');
   },
   fallthrough: false
@@ -114,6 +365,8 @@ app.use('/api/v1/ai', aiRoutes);
 app.use('/api/v1/users', usersRoutes);
 app.use('/api/v1/publications', publicationsRoutes);
 app.use('/api/v1/feedback', feedbackRoutes);
+app.use('/api/v1/features', featuresRoutes);
+app.use('/api/v1/demo-features', demoFeaturesRoutes);
 
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {
@@ -139,7 +392,12 @@ app.use((req, res) => {
   });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = http.createServer(app);
+
+// 初始化WebSocket
+setupWebSocket(server);
+
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`
 ╔════════════════════════════════════════════════════════╗
 ║                                                        ║
@@ -148,7 +406,9 @@ app.listen(PORT, '0.0.0.0', () => {
 ║   Status: Running                                      ║
 ║   Port: ${PORT}                                          ║
 ║   API Base: http://0.0.0.0:${PORT}/api/v1                ║
+║   WebSocket: ws://0.0.0.0:${PORT}/ws                    ║
 ║                                                        ║
 ╚════════════════════════════════════════════════════════╝
   `);
 });
+
