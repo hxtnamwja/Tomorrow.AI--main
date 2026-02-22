@@ -17,7 +17,7 @@ import { Demo, Language, UserRole, Subject, Category, Layer, Bounty, Community, 
 import { DICTIONARY, getTranslation } from './constants';
 import { StorageService } from './services/storageService';
 import { AiService } from './services/aiService';
-import { PublicationsAPI, FeedbackAPI } from './services/apiService';
+import { PublicationsAPI, FeedbackAPI, CommunitiesAPI } from './services/apiService';
 
 
 
@@ -85,7 +85,10 @@ export default function App() {
   const [isJoinCodeModalOpen, setIsJoinCodeModalOpen] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [isCreateCommModalOpen, setIsCreateCommModalOpen] = useState(false);
-  const [createCommData, setCreateCommData] = useState({ name: '', desc: '' });
+  const [createCommData, setCreateCommData] = useState({ name: '', desc: '', type: 'closed' as 'open' | 'closed' });
+  
+  // Community filter state
+  const [communityFilter, setCommunityFilter] = useState<'all' | 'open' | 'closed'>('all');
 
   // Community Admin Panel State
   const [activeCommunityAdminPanel, setActiveCommunityAdminPanel] = useState<string | null>(null);
@@ -283,6 +286,20 @@ export default function App() {
     }
   };
 
+  const handleLeaveCommunity = async (communityId: string) => {
+    if (!confirm('确定要退出这个社区吗？')) {
+      return;
+    }
+    try {
+      await CommunitiesAPI.leave(communityId);
+      alert('已成功退出社区');
+      await refreshAllData();
+    } catch (err) {
+      console.error('Failed to leave community:', err);
+      alert('退出社区失败');
+    }
+  };
+
   const handleOpenFeedback = (
     type: 'demo_complaint' | 'community_feedback' | 'website_feedback' | 'ban_appeal',
     layer: Layer,
@@ -416,16 +433,27 @@ export default function App() {
       return activeCommunity.creatorId === currentUserId;
   }, [role, activeCommunity, currentUserId]);
 
-  // Filter communities for search
+  // Filter communities for search and type
   const filteredCommunities = useMemo(() => {
       const approvedCommunities = communities.filter(c => c.status === 'approved');
-      if (!communitySearch.trim()) return approvedCommunities;
-      const searchLower = communitySearch.toLowerCase();
-      return approvedCommunities.filter(c => 
-          c.name.toLowerCase().includes(searchLower) || 
-          c.description.toLowerCase().includes(searchLower)
-      );
-  }, [communities, communitySearch]);
+      let filtered = approvedCommunities;
+      
+      // Filter by type
+      if (communityFilter !== 'all') {
+          filtered = filtered.filter(c => c.type === communityFilter);
+      }
+      
+      // Filter by search
+      if (communitySearch.trim()) {
+          const searchLower = communitySearch.toLowerCase();
+          filtered = filtered.filter(c => 
+              c.name.toLowerCase().includes(searchLower) || 
+              c.description.toLowerCase().includes(searchLower)
+          );
+      }
+      
+      return filtered;
+  }, [communities, communitySearch, communityFilter]);
 
   // --- Filtering Logic ---
 
@@ -577,11 +605,21 @@ export default function App() {
   // --- Community Actions ---
 
   const handleCreateCommunity = async () => {
-      await StorageService.createCommunity(createCommData.name, createCommData.desc, currentUserId);
-      setCreateCommData({name: '', desc: ''});
+      await StorageService.createCommunity(createCommData.name, createCommData.desc, currentUserId, createCommData.type);
+      setCreateCommData({name: '', desc: '', type: 'closed'});
       setIsCreateCommModalOpen(false);
       await refreshAllData();
       alert("Community request sent for approval.");
+  };
+  
+  const handleJoinOpenCommunity = async (communityId: string) => {
+    try {
+      await StorageService.joinOpenCommunity(communityId);
+      await refreshAllData();
+      alert('Successfully joined the community!');
+    } catch (error) {
+      alert('Failed to join the community');
+    }
   };
 
   const handleJoinByCode = async () => {
@@ -1218,7 +1256,8 @@ export default function App() {
       {filteredDemos.map(demo => {
         const isGeneralAdmin = role === 'general_admin';
         const isDemoCommAdmin = demo.layer === 'community' && communities.find(c => c.id === demo.communityId)?.creatorId === currentUserId;
-        const canDelete = isGeneralAdmin || isDemoCommAdmin;
+        const isAuthor = demo.creatorId === currentUserId || (demo.creatorId === undefined && allUsers.find(u => u.username === demo.author)?.id === currentUserId);
+        const canDelete = isGeneralAdmin || isDemoCommAdmin || isAuthor;
 
         return (
         <motion.div
@@ -1351,7 +1390,39 @@ export default function App() {
                     </h2>
                     <p className="text-slate-500 mt-2 text-lg">Join specialized research groups or create your own.</p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
+                    <div className="flex gap-2 bg-slate-100 p-1 rounded-xl">
+                        <button
+                            onClick={() => setCommunityFilter('all')}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                                communityFilter === 'all' 
+                                    ? 'bg-white text-slate-800 shadow-sm' 
+                                    : 'text-slate-500 hover:text-slate-700'
+                            }`}
+                        >
+                            全部
+                        </button>
+                        <button
+                            onClick={() => setCommunityFilter('open')}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-1 ${
+                                communityFilter === 'open' 
+                                    ? 'bg-emerald-500 text-white shadow-sm' 
+                                    : 'text-slate-500 hover:text-slate-700'
+                            }`}
+                        >
+                            <Globe className="w-4 h-4" /> 开放社区
+                        </button>
+                        <button
+                            onClick={() => setCommunityFilter('closed')}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-1 ${
+                                communityFilter === 'closed' 
+                                    ? 'bg-indigo-500 text-white shadow-sm' 
+                                    : 'text-slate-500 hover:text-slate-700'
+                            }`}
+                        >
+                            <ShieldCheck className="w-4 h-4" /> 封闭社区
+                        </button>
+                    </div>
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                         <input
@@ -1359,12 +1430,12 @@ export default function App() {
                             placeholder="搜索社区..."
                             value={communitySearch}
                             onChange={(e) => setCommunitySearch(e.target.value)}
-                            className="pl-10 pr-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 w-64"
+                            className="pl-10 pr-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 w-full md:w-64"
                         />
                     </div>
                     <button 
                         onClick={() => setIsJoinCodeModalOpen(true)}
-                        className="px-6 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold hover:border-indigo-300 hover:text-indigo-600 hover:shadow-lg transition-all flex items-center gap-2 shadow-sm"
+                        className="px-6 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold hover:border-indigo-300 hover:text-indigo-600 hover:shadow-lg transition-all flex items-center gap-2 shadow-sm"
                     >
                         <KeyRound className="w-4 h-4" /> {t('joinByCode')}
                     </button>
@@ -1387,16 +1458,34 @@ export default function App() {
                       const isPending = c.pendingMembers.includes(currentUserId);
                       const isCommunityAdmin = role === 'general_admin' || c.creatorId === currentUserId;
                       const hasPendingRequests = c.pendingMembers.length > 0;
+                      const isOpenCommunity = c.type === 'open';
 
                       return (
                           <div key={c.id} className="glass-card rounded-2xl p-8 hover:-translate-y-1 transition-transform duration-300">
                               <div className="flex justify-between items-start mb-6">
-                                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center text-indigo-600 border border-white shadow-sm">
-                                      <Users className="w-7 h-7" />
+                                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border border-white shadow-sm ${
+                                      isOpenCommunity 
+                                          ? 'bg-gradient-to-br from-emerald-50 to-teal-50 text-emerald-600' 
+                                          : 'bg-gradient-to-br from-indigo-50 to-purple-50 text-indigo-600'
+                                  }`}>
+                                      {isOpenCommunity ? (
+                                          <Globe className="w-7 h-7" />
+                                      ) : (
+                                          <Users className="w-7 h-7" />
+                                      )}
                                   </div>
-                                  <span className="text-xs font-bold bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full border border-slate-200">
-                                      {c.members.length} {t('member')}
-                                  </span>
+                                  <div className="flex flex-col items-end gap-2">
+                                      <span className={`text-xs font-bold px-3 py-1.5 rounded-full border ${
+                                          isOpenCommunity 
+                                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                                              : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                      }`}>
+                                          {isOpenCommunity ? '开放' : '封闭'}
+                                      </span>
+                                      <span className="text-xs font-bold bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full border border-slate-200">
+                                          {c.members.length} {t('member')}
+                                      </span>
+                                  </div>
                               </div>
                               <h3 className="text-xl font-bold text-slate-800 mb-3">{c.name}</h3>
                               <p className="text-sm text-slate-500 mb-8 line-clamp-2 h-10 leading-relaxed">{c.description}</p>
@@ -1425,22 +1514,34 @@ export default function App() {
                                           </button>
                                       </>
                                   ) : isMember ? (
-                                      <button 
-                                          onClick={() => { setActiveCommunityId(c.id); setView('explore'); }}
-                                          className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors"
-                                      >
-                                          {t('open')}
-                                      </button>
+                                      <>
+                                          <button 
+                                              onClick={() => { setActiveCommunityId(c.id); setView('explore'); }}
+                                              className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+                                          >
+                                              {t('open')}
+                                          </button>
+                                          <button 
+                                              onClick={(e) => { e.stopPropagation(); handleLeaveCommunity(c.id); }}
+                                              className="px-4 py-3 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100 transition-colors border border-red-100"
+                                          >
+                                              退出
+                                          </button>
+                                      </>
                                   ) : isPending ? (
                                       <button disabled className="flex-1 px-4 py-3 bg-yellow-50 text-yellow-600 font-bold rounded-xl cursor-not-allowed border border-yellow-100">
                                           Requested
                                       </button>
                                   ) : (
                                       <button 
-                                          onClick={() => handleRequestJoin(c.id)}
-                                          className="flex-1 px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-indigo-500/30 transition-all"
+                                          onClick={() => isOpenCommunity ? handleJoinOpenCommunity(c.id) : handleRequestJoin(c.id)}
+                                          className={`flex-1 px-4 py-3 font-bold rounded-xl transition-all ${
+                                              isOpenCommunity 
+                                                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:shadow-lg hover:shadow-emerald-500/30' 
+                                                  : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-lg hover:shadow-indigo-500/30'
+                                          }`}
                                       >
-                                          {t('join')}
+                                          {isOpenCommunity ? '加入' : t('join')}
                                       </button>
                                   )}
                               </div>
@@ -2010,6 +2111,43 @@ export default function App() {
                             onChange={e => setCreateCommData({...createCommData, desc: e.target.value})}
                             placeholder="Briefly describe your research goals..."
                          />
+                     </div>
+                     <div>
+                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">社区类型</label>
+                         <div className="grid grid-cols-2 gap-3">
+                             <button
+                                onClick={() => setCreateCommData({...createCommData, type: 'closed'})}
+                                className={`p-4 rounded-xl border-2 transition-all text-left ${
+                                    createCommData.type === 'closed' 
+                                        ? 'border-indigo-500 bg-indigo-50' 
+                                        : 'border-slate-200 hover:border-slate-300'
+                                }`}
+                             >
+                                <div className="flex items-center gap-2 mb-1">
+                                    <ShieldCheck className={`w-5 h-5 ${createCommData.type === 'closed' ? 'text-indigo-600' : 'text-slate-400'}`} />
+                                    <span className={`font-bold text-sm ${createCommData.type === 'closed' ? 'text-indigo-800' : 'text-slate-600'}`}>
+                                        封闭社区
+                                    </span>
+                                </div>
+                                <p className="text-xs text-slate-500">需要申请或邀请码才能加入</p>
+                             </button>
+                             <button
+                                onClick={() => setCreateCommData({...createCommData, type: 'open'})}
+                                className={`p-4 rounded-xl border-2 transition-all text-left ${
+                                    createCommData.type === 'open' 
+                                        ? 'border-emerald-500 bg-emerald-50' 
+                                        : 'border-slate-200 hover:border-slate-300'
+                                }`}
+                             >
+                                <div className="flex items-center gap-2 mb-1">
+                                    <Globe className={`w-5 h-5 ${createCommData.type === 'open' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                                    <span className={`font-bold text-sm ${createCommData.type === 'open' ? 'text-emerald-800' : 'text-slate-600'}`}>
+                                        开放社区
+                                    </span>
+                                </div>
+                                <p className="text-xs text-slate-500">点击即可直接加入，无门槛</p>
+                             </button>
+                         </div>
                      </div>
                  </div>
                  <div className="flex gap-3">

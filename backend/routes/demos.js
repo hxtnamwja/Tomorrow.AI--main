@@ -38,7 +38,9 @@ const mapDemoRow = (row) => {
     projectType: row.project_type || 'single-file',
     entryFile: row.entry_file || undefined,
     projectSize: row.project_size || 0,
-    config
+    config,
+    archived: row.archived ? true : false,
+    archivedAt: row.archived_at || undefined
   };
 };
 
@@ -65,7 +67,7 @@ const getCurrentUser = async (req) => {
 
 // GET /demos
 router.get('/', async (req, res) => {
-  const { layer, communityId, categoryId, search, status, authorId, sortBy } = req.query;
+  const { layer, communityId, categoryId, search, status, authorId, sortBy, archived } = req.query;
 
   // Always include like count in the query
   let query = `
@@ -75,6 +77,13 @@ router.get('/', async (req, res) => {
     WHERE 1=1
   `;
   const params = [];
+  
+  // Default to non-archived demos unless explicitly requested
+  if (archived === 'true') {
+    query += ' AND d.archived = 1';
+  } else {
+    query += ' AND (d.archived = 0 OR d.archived IS NULL)';
+  }
 
   if (layer === 'community' && !communityId) {
     return res.status(400).json({ code: 400, message: 'communityId is required for community layer', data: null });
@@ -225,18 +234,121 @@ router.patch('/:id/cover', async (req, res) => {
   }
 });
 
-// DELETE /demos/:id
+// DELETE /demos/:id - Soft delete (archive)
 router.delete('/:id', async (req, res) => {
   try {
+    const user = await getCurrentUser(req);
+    if (!user) {
+      return res.status(401).json({ code: 401, message: 'Not authenticated', data: null });
+    }
+    
+    const demo = await getRow('SELECT * FROM demos WHERE id = ?', [req.params.id]);
+    if (!demo) {
+      return res.status(404).json({ code: 404, message: 'Demo not found', data: null });
+    }
+    
+    const isOwner = demo.creator_id === user.id;
+    const isAdmin = user.role === 'general_admin';
+    
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ code: 403, message: 'Not authorized', data: null });
+    }
+    
+    const result = await runQuery(
+      'UPDATE demos SET archived = 1, archived_at = ? WHERE id = ?', 
+      [Date.now(), req.params.id]
+    );
+    
+    if (result.changes === 0) {
+      return res.status(404).json({ code: 404, message: 'Demo not found', data: null });
+    }
+    
+    const updatedDemo = await getRow('SELECT * FROM demos WHERE id = ?', [req.params.id]);
+    res.json({ code: 200, message: 'Demo archived successfully', data: mapDemoRow(updatedDemo) });
+  } catch (error) {
+    console.error('Error archiving demo:', error);
+    res.status(500).json({ code: 500, message: 'Server error', data: null });
+  }
+});
+
+// POST /demos/:id/restore - Restore archived demo
+router.post('/:id/restore', async (req, res) => {
+  try {
+    const user = await getCurrentUser(req);
+    if (!user) {
+      return res.status(401).json({ code: 401, message: 'Not authenticated', data: null });
+    }
+    
+    const demo = await getRow('SELECT * FROM demos WHERE id = ?', [req.params.id]);
+    if (!demo) {
+      return res.status(404).json({ code: 404, message: 'Demo not found', data: null });
+    }
+    
+    if (demo.creator_id !== user.id) {
+      return res.status(403).json({ code: 403, message: 'Only the owner can restore this demo', data: null });
+    }
+    
+    const result = await runQuery(
+      'UPDATE demos SET archived = 0, archived_at = NULL WHERE id = ?', 
+      [req.params.id]
+    );
+    
+    if (result.changes === 0) {
+      return res.status(404).json({ code: 404, message: 'Demo not found', data: null });
+    }
+    
+    const updatedDemo = await getRow('SELECT * FROM demos WHERE id = ?', [req.params.id]);
+    res.json({ code: 200, message: 'Demo restored successfully', data: mapDemoRow(updatedDemo) });
+  } catch (error) {
+    console.error('Error restoring demo:', error);
+    res.status(500).json({ code: 500, message: 'Server error', data: null });
+  }
+});
+
+// DELETE /demos/:id/permanent - Permanently delete demo
+router.delete('/:id/permanent', async (req, res) => {
+  try {
+    const user = await getCurrentUser(req);
+    if (!user) {
+      return res.status(401).json({ code: 401, message: 'Not authenticated', data: null });
+    }
+    
+    const demo = await getRow('SELECT * FROM demos WHERE id = ?', [req.params.id]);
+    if (!demo) {
+      return res.status(404).json({ code: 404, message: 'Demo not found', data: null });
+    }
+    
+    if (demo.creator_id !== user.id) {
+      return res.status(403).json({ code: 403, message: 'Only the owner can permanently delete this demo', data: null });
+    }
+    
     const result = await runQuery('DELETE FROM demos WHERE id = ?', [req.params.id]);
     
     if (result.changes === 0) {
       return res.status(404).json({ code: 404, message: 'Demo not found', data: null });
     }
     
-    res.json({ code: 200, message: 'Deleted successfully', data: null });
+    res.json({ code: 200, message: 'Demo permanently deleted', data: null });
   } catch (error) {
-    console.error('Error deleting demo:', error);
+    console.error('Error permanently deleting demo:', error);
+    res.status(500).json({ code: 500, message: 'Server error', data: null });
+  }
+});
+
+// GET /demos/archived/by/:userId - Get all archived demos by user
+router.get('/archived/by/:userId', async (req, res) => {
+  const { userId } = req.params;
+  
+  try {
+    const demos = await getAllRows(`
+      SELECT d.* FROM demos d
+      WHERE d.creator_id = ? AND d.archived = 1
+      ORDER BY d.archived_at DESC
+    `, [userId]);
+    
+    res.json({ code: 200, message: 'Success', data: demos.map(mapDemoRow) });
+  } catch (error) {
+    console.error('Error fetching archived demos:', error);
     res.status(500).json({ code: 500, message: 'Server error', data: null });
   }
 });

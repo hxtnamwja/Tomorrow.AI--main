@@ -162,21 +162,27 @@ export const AIMessageContent: React.FC<AIMessageContentProps> = ({ text, onOpen
     return () => container.removeEventListener('click', handleLinkClick);
   }, [onOpenDemo]);
 
-  // Parse markdown when streaming ends
+  // Parse markdown when streaming ends or when text changes
   useEffect(() => {
-    // When streaming ends, parse the final text
-    if (!isStreaming && text && text !== lastTextRef.current) {
+    if (text && text !== lastTextRef.current) {
+      lastTextRef.current = text;
+      if (!isStreaming) {
+        safeParseMarkdown(text).then(html => {
+          setProcessedHtml(html);
+        });
+      }
+    }
+  }, [text, isStreaming]);
+
+  // Initial parse for existing messages from localStorage
+  useEffect(() => {
+    if (text && !processedHtml && !isStreaming) {
       lastTextRef.current = text;
       safeParseMarkdown(text).then(html => {
         setProcessedHtml(html);
       });
-    } else if (isStreaming && text) {
-        // Optional: Simple formatting during streaming if needed, or just raw text
-        // For now, let's just show text with basic line breaks
-        // setProcessedHtml(text.replace(/\n/g, '<br>'));
-        // Or keep it empty and let the fallback render raw text
     }
-  }, [text, isStreaming]);
+  }, []);
 
   // If streaming or no HTML yet, render raw text (maybe with simple formatting)
   if (isStreaming || !processedHtml) {

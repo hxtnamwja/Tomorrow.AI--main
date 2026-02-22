@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Feedback, UserRole } from '../types';
-import { AlertTriangle, MessageSquare, Bug, CheckCircle2, Clock, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertTriangle, MessageSquare, Bug, CheckCircle2, Clock, XCircle, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { FeedbackAPI } from '../services/apiService';
 
 interface FeedbackListProps {
@@ -18,6 +18,7 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
 }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [resolution, setResolution] = useState('');
 
   const getTypeIcon = (type: string) => {
@@ -110,6 +111,23 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
     }
   };
 
+  const handleDeleteFeedback = async (id: string) => {
+    if (!confirm('确定要删除这条反馈/投诉记录吗？此操作不可撤销！')) {
+      return;
+    }
+    setDeletingId(id);
+    try {
+      await FeedbackAPI.delete(id);
+      alert('删除成功！');
+      if (onUpdate) onUpdate();
+    } catch (error) {
+      console.error('Error deleting feedback:', error);
+      alert('删除失败，请重试');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleString('zh-CN');
   };
@@ -193,6 +211,19 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
                       处理时间：{formatDate(item.reviewedAt)}
                     </p>
                   )}
+                </div>
+              )}
+              
+              {!isAdmin && (
+                <div className="pt-4 border-t border-slate-200">
+                  <button
+                    onClick={() => handleDeleteFeedback(item.id)}
+                    disabled={deletingId === item.id}
+                    className="px-4 py-2 bg-red-100 text-red-700 text-sm font-bold rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    删除记录
+                  </button>
                 </div>
               )}
               

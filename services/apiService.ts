@@ -193,11 +193,40 @@ export const DemosAPI = {
     const result = await apiRequest<Demo[]>(`/demos${query}`);
     return result.data;
   },
+
+  // Archive (soft delete) a demo
+  archive: async (id: string): Promise<Demo> => {
+    const result = await apiRequest<Demo>(`/demos/${id}`, {
+      method: 'DELETE',
+    });
+    return result.data;
+  },
+
+  // Restore an archived demo
+  restore: async (id: string): Promise<Demo> => {
+    const result = await apiRequest<Demo>(`/demos/${id}/restore`, {
+      method: 'POST',
+    });
+    return result.data;
+  },
+
+  // Permanently delete a demo
+  deletePermanently: async (id: string): Promise<void> => {
+    await apiRequest<void>(`/demos/${id}/permanent`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Get archived demos by user
+  getArchivedByUser: async (userId: string): Promise<Demo[]> => {
+    const result = await apiRequest<Demo[]>(`/demos/archived/by/${userId}`);
+    return result.data;
+  },
 };
 
 // Communities API
 export const CommunitiesAPI = {
-  getAll: async (params?: { status?: string; userId?: string }): Promise<Community[]> => {
+  getAll: async (params?: { status?: string; userId?: string; type?: string }): Promise<Community[]> => {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
@@ -211,10 +240,17 @@ export const CommunitiesAPI = {
     return result.data;
   },
   
-  create: async (name: string, description: string): Promise<Community> => {
+  create: async (name: string, description: string, type?: string): Promise<Community> => {
     const result = await apiRequest<Community>('/communities', {
       method: 'POST',
-      body: JSON.stringify({ name, description }),
+      body: JSON.stringify({ name, description, type }),
+    });
+    return result.data;
+  },
+  
+  join: async (communityId: string): Promise<Community> => {
+    const result = await apiRequest<Community>(`/communities/${communityId}/join`, {
+      method: 'POST',
     });
     return result.data;
   },
@@ -291,6 +327,12 @@ export const CommunitiesAPI = {
   getBans: async (communityId: string): Promise<any[]> => {
     const result = await apiRequest<any[]>(`/communities/${communityId}/bans`);
     return result.data;
+  },
+
+  leave: async (communityId: string): Promise<void> => {
+    await apiRequest<void>(`/communities/${communityId}/leave`, {
+      method: 'POST',
+    });
   },
 };
 
@@ -528,6 +570,12 @@ export const FeedbackAPI = {
       body: JSON.stringify({ status, resolution }),
     });
     return result.data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await apiRequest<void>(`/feedback/${id}`, {
+      method: 'DELETE',
+    });
   },
 };
 

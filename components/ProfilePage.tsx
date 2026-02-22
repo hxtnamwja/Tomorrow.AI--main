@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { UserRole, User as UserType, Community, Demo, Feedback } from '../types';
-import { UserCircle, ShieldCheck, Edit3, Save, X, Mail, QrCode, BookOpen, Building2, Heart, Image as ImageIcon, MessageSquare } from 'lucide-react';
+import { UserCircle, ShieldCheck, Edit3, Save, X, Mail, QrCode, BookOpen, Building2, Heart, Image as ImageIcon, MessageSquare, Archive, RotateCcw, Trash2 } from 'lucide-react';
 import { StorageService } from '../services/storageService';
-import { FeedbackAPI } from '../services/apiService';
+import { FeedbackAPI, DemosAPI } from '../services/apiService';
 import FeedbackList from './FeedbackList';
 
 interface ProfilePageProps {
@@ -35,6 +35,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [user, setUser] = useState<UserType | null>(null);
   const [stats, setStats] = useState<any>(null);
   const [userDemos, setUserDemos] = useState<Demo[]>([]);
+  const [archivedDemos, setArchivedDemos] = useState<Demo[]>([]);
   const [userFeedbacks, setUserFeedbacks] = useState<Feedback[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
@@ -79,8 +80,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         try {
           const feedbacksData = await FeedbackAPI.getMy();
           setUserFeedbacks(feedbacksData);
+          
+          // Load archived demos only for own profile
+          const archivedDemosData = await DemosAPI.getArchivedByUser(userId);
+          setArchivedDemos(archivedDemosData);
         } catch (error) {
-          console.error('Failed to load feedback:', error);
+          console.error('Failed to load feedback or archived demos:', error);
         }
       }
       
@@ -98,6 +103,50 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       console.error('Failed to load profile data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefreshData = () => {
+    loadData();
+  };
+
+  const handleRestoreDemo = async (demoId: string) => {
+    if (!confirm('确定要恢复这个程序吗？')) {
+      return;
+    }
+    try {
+      await DemosAPI.restore(demoId);
+      setArchivedDemos(prev => prev.filter(d => d.id !== demoId));
+      loadData();
+    } catch (error) {
+      console.error('Failed to restore demo:', error);
+      alert('恢复失败');
+    }
+  };
+
+  const handleDeletePermanently = async (demoId: string) => {
+    if (!confirm('确定要永久删除这个程序吗？此操作不可撤销！')) {
+      return;
+    }
+    try {
+      await DemosAPI.deletePermanently(demoId);
+      setArchivedDemos(prev => prev.filter(d => d.id !== demoId));
+    } catch (error) {
+      console.error('Failed to delete demo permanently:', error);
+      alert('永久删除失败');
+    }
+  };
+
+  const handleDeleteDemo = async (demoId: string) => {
+    if (!confirm('确定要删除这个程序吗？它将被移到留档区。')) {
+      return;
+    }
+    try {
+      await DemosAPI.delete(demoId);
+      loadData();
+    } catch (error) {
+      console.error('Failed to delete demo:', error);
+      alert('删除失败');
     }
   };
 
@@ -442,10 +491,29 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           </h2>
           <div className="grid gap-3">
             {userDemos.map((demo) => {
-              const canAccess = canAccessDemo(demo);
-              const communityName = demo.communityId 
-                ? communities.find(c => c.id === demo.communityId)?.name 
-                : null;
+              const canAccess = true;
+              
+              const getLocationDisplay = (loc: any) => {
+                if (loc.layer === 'general') {
+                  return '通用知识库';
+                } else if (loc.layer === 'community' && loc.communityId) {
+                  const community = communities.find(c => c.id === loc.communityId);
+                  if (community) {
+                    return community.name;
+                  }
+                  return '暂时不归属于任何社区';
+                }
+                return '通用知识库';
+              };
+              
+              const locations = demo.locations || [];
+              const locationDisplay = locations.length > 0 
+                ? locations.map(getLocationDisplay).join('、') 
+                : (demo.communityId 
+                    ? (communities.find(c => c.id === demo.communityId)?.name || '暂时不归属于任何社区')
+                    : '通用知识库');
+              
+              const canDelete = isOwnProfile || currentUserRole === 'general_admin';
               
               return (
                 <div 
@@ -460,16 +528,25 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="font-semibold text-slate-800">{demo.title}</h3>
-                      {!canAccess && (
-                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
-                          {communityName ? `Need to join ${communityName}` : 'Restricted Access'}
-                        </span>
-                      )}
                     </div>
-                    <p className="text-sm text-slate-500 line-clamp-1">{demo.description}</p>
+                    <p className="text-sm text-slate-500 line-clamp-1 mb-1">{demo.description}</p>
+                    <p className="text-xs text-indigo-600 font-medium">
+                      发布于：{locationDisplay}
+                    </p>
                   </div>
-                  <div className="text-sm text-slate-400">
-                    {new Date(demo.createdAt).toLocaleDateString()}
+                  <div className="flex items-center gap-3">
+                    <div className="text-sm text-slate-400">
+                      {new Date(demo.createdAt).toLocaleDateString()}
+                    </div>
+                    {canDelete && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteDemo(demo.id); }}
+                        className="px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                      >
+                        <Archive className="w-3.5 h-3.5" />
+                        删除
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -488,7 +565,64 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             feedback={userFeedbacks}
             isAdmin={false}
             currentUserRole={currentUserRole}
+            onUpdate={handleRefreshData}
           />
+        </div>
+      )}
+
+      {isOwnProfile && archivedDemos.length > 0 && (
+        <div className="mt-6 glass-card rounded-2xl p-6">
+          <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <Archive className="w-5 h-5" />
+            留档区域
+          </h2>
+          <p className="text-sm text-slate-500 mb-4">
+            这里保存了您所有被删除的程序，您可以恢复或永久删除它们。
+          </p>
+          <div className="grid gap-3">
+            {archivedDemos.map((demo) => {
+              const canAccess = canAccessDemo(demo);
+              const communityName = demo.communityId 
+                ? communities.find(c => c.id === demo.communityId)?.name 
+                : null;
+              
+              return (
+                <div key={demo.id} className="p-4 bg-slate-50 rounded-xl">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-semibold text-slate-800">{demo.title}</h3>
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
+                          留档
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-500 line-clamp-1 mb-2">{demo.description}</p>
+                      <p className="text-xs text-slate-400">
+                        留档于 {demo.archivedAt ? new Date(demo.archivedAt).toLocaleString() : '未知时间'}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {canAccess && onOpenDemo && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onOpenDemo(demo); }}
+                          className="px-3 py-1.5 bg-slate-200 text-slate-700 hover:bg-slate-300 rounded-lg text-sm font-medium transition-colors"
+                        >
+                          查看
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeletePermanently(demo.id); }}
+                        className="px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        永久删除
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

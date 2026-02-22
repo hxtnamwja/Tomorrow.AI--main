@@ -36,7 +36,9 @@ const mapDemoRow = (row) => {
     likeCount: row.like_count || 0,
     projectType: row.project_type || 'single-file',
     entryFile: row.entry_file || undefined,
-    projectSize: row.project_size || 0
+    projectSize: row.project_size || 0,
+    archived: row.archived === 1,
+    archivedAt: row.archived_at || undefined
   };
 };
 
@@ -328,15 +330,35 @@ router.get('/:id/demos', async (req, res) => {
       return res.status(404).json({ code: 404, message: 'User not found', data: null });
     }
 
-    // Get demos by creator_id if available, otherwise by author (username)
-    const demos = await getAllRows(`
-      SELECT * FROM demos 
-      WHERE (creator_id = ? OR author = ?) AND status = 'published'
-      ORDER BY created_at DESC
+    // First, get all unique demo ids from demos table (original demos)
+    const baseDemos = await getAllRows(`
+      SELECT DISTINCT d.* FROM demos d 
+      WHERE (d.creator_id = ? OR d.author = ?) AND d.status = 'published' AND (d.archived = 0 OR d.archived IS NULL)
+      ORDER BY d.created_at DESC
     `, [id, user.username]);
 
-    const mappedDemos = demos.map(mapDemoRow);
-    res.json({ code: 200, message: 'Success', data: mappedDemos });
+    // For each demo, get all its locations
+    const demosWithLocations = [];
+    for (const demo of baseDemos) {
+      const locations = await getAllRows(`
+        SELECT dl.*, c.name as community_name 
+        FROM demo_locations dl 
+        LEFT JOIN communities c ON dl.community_id = c.id
+        WHERE dl.demo_id = ?
+      `, [demo.id]);
+      
+      const mappedDemo = mapDemoRow(demo);
+      mappedDemo.locations = locations.map(loc => ({
+        layer: loc.layer,
+        communityId: loc.community_id || undefined,
+        communityName: loc.community_name || undefined,
+        categoryId: loc.category_id
+      }));
+      
+      demosWithLocations.push(mappedDemo);
+    }
+
+    res.json({ code: 200, message: 'Success', data: demosWithLocations });
   } catch (error) {
     console.error('Get user demos error:', error);
     res.status(500).json({ code: 500, message: 'Server error', data: null });

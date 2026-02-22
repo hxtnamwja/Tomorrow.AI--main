@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Users, Settings, Trash2, UserCheck, UserX, LogOut, Building2 } from 'lucide-react';
+import { X, Users, Settings, Trash2, UserCheck, UserX, LogOut, Building2, ShieldCheck, Globe } from 'lucide-react';
 import { Community, UserRole } from '../types';
 
 interface CommunityAdminPanelProps {
@@ -26,6 +26,14 @@ export const CommunityAdminPanel: React.FC<CommunityAdminPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'requests'>('overview');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  
+  const handleToggleCommunityType = () => {
+    const newType = community.type === 'open' ? 'closed' : 'open';
+    onUpdateCommunity({
+      ...community,
+      type: newType
+    });
+  };
 
   // Check if current user is the community creator or general admin
   const isAdmin = community.creatorId === currentUserId || currentUserRole === 'general_admin';
@@ -169,7 +177,7 @@ export const CommunityAdminPanel: React.FC<CommunityAdminPanelProps> = ({
                   <Building2 className="w-5 h-5 text-indigo-600" />
                   社区基本信息
                 </h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="bg-white p-4 rounded-lg">
                     <p className="text-sm text-slate-500 mb-1">社区名称</p>
                     <p className="font-medium text-slate-800">{community.name}</p>
@@ -187,7 +195,38 @@ export const CommunityAdminPanel: React.FC<CommunityAdminPanelProps> = ({
                     <p className="font-medium text-slate-800">{pendingCount} 人</p>
                   </div>
                 </div>
-                <div className="mt-4 bg-white p-4 rounded-lg">
+                
+                {/* Community Type Section */}
+                <div className="bg-white p-4 rounded-lg mb-4">
+                  <p className="text-sm text-slate-500 mb-3">社区类型</p>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {community.type === 'open' ? (
+                        <div className="flex items-center gap-2 text-emerald-700">
+                          <Globe className="w-5 h-5" />
+                          <span className="font-medium">开放社区 - 点击即可加入</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-indigo-700">
+                          <ShieldCheck className="w-5 h-5" />
+                          <span className="font-medium">封闭社区 - 需要申请或邀请码</span>
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleToggleCommunityType}
+                      className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                        community.type === 'open' 
+                          ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' 
+                          : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                      }`}
+                    >
+                      转换为{community.type === 'open' ? '封闭' : '开放'}社区
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="bg-white p-4 rounded-lg">
                   <p className="text-sm text-slate-500 mb-1">社区描述</p>
                   <p className="text-slate-800">{community.description}</p>
                 </div>

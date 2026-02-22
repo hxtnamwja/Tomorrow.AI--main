@@ -195,4 +195,36 @@ router.put('/:id/status', async (req, res) => {
   }
 });
 
+// Delete feedback (only creator can delete)
+router.delete('/:id', async (req, res) => {
+  try {
+    const user = await getCurrentUser(req);
+    if (!user) {
+      return res.status(401).json({ code: 401, message: 'Not authenticated', data: null });
+    }
+
+    const { id } = req.params;
+
+    const feedback = await getRow('SELECT * FROM feedback WHERE id = ?', [id]);
+    if (!feedback) {
+      return res.status(404).json({ code: 404, message: 'Feedback not found', data: null });
+    }
+
+    // Only the creator can delete the feedback
+    if (feedback.created_by !== user.id) {
+      return res.status(403).json({ code: 403, message: 'Not authorized', data: null });
+    }
+
+    await runQuery('DELETE FROM feedback WHERE id = ?', [id]);
+    res.json({
+      code: 200,
+      message: 'Feedback deleted successfully',
+      data: null
+    });
+  } catch (error) {
+    console.error('Error deleting feedback:', error);
+    res.status(500).json({ code: 500, message: 'Failed to delete feedback', data: null });
+  }
+});
+
 export default router;

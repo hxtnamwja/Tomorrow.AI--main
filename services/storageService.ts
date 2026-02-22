@@ -139,17 +139,21 @@ export const StorageService = {
   },
 
   // --- Communities ---
-  getCommunities: async (): Promise<Community[]> => {
+  getCommunities: async (params?: { type?: string }): Promise<Community[]> => {
     try {
-      return await CommunitiesAPI.getAll();
+      return await CommunitiesAPI.getAll(params);
     } catch (error) {
       console.error('Error fetching communities:', error);
       return [];
     }
   },
 
-  createCommunity: async (name: string, description: string, creatorId: string): Promise<Community> => {
-    return await CommunitiesAPI.create(name, description);
+  createCommunity: async (name: string, description: string, creatorId: string, type?: string): Promise<Community> => {
+    return await CommunitiesAPI.create(name, description, type);
+  },
+  
+  joinOpenCommunity: async (communityId: string): Promise<Community> => {
+    return await CommunitiesAPI.join(communityId);
   },
 
   joinCommunityRequest: async (communityId: string, userId: string) => {

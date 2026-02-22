@@ -199,24 +199,14 @@ router.patch('/:id/status', async (req, res) => {
       const demo = await getRow('SELECT * FROM demos WHERE id = ?', [publication.demo_id]);
       if (demo) {
         await runQuery(`
-          INSERT INTO demos (id, title, description, category_id, layer, community_id, code, author, creator_id, thumbnail_url, status, bounty_id, project_type, entry_file, project_size, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT OR IGNORE INTO demo_locations (id, demo_id, layer, community_id, category_id, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
         `, [
           uuidv4(),
-          demo.title,
-          demo.description,
-          publication.category_id,
+          publication.demo_id,
           publication.layer,
           publication.community_id || null,
-          demo.code,
-          demo.author,
-          demo.creator_id,
-          demo.thumbnail_url,
-          'published',
-          demo.bounty_id,
-          demo.project_type || 'single-file',
-          demo.entry_file,
-          demo.project_size,
+          publication.category_id,
           Date.now()
         ]);
       }

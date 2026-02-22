@@ -40,6 +40,8 @@ export interface Bounty {
   createdAt: number;
 }
 
+export type CommunityType = 'open' | 'closed';
+
 export interface Community {
   id: string;
   name: string;
@@ -49,6 +51,7 @@ export interface Community {
   status: 'pending' | 'approved' | 'rejected';
   members: string[]; // List of User IDs who are members
   pendingMembers: string[]; // List of User IDs asking to join
+  type: CommunityType; // 'open' or 'closed'
   createdAt: number;
 }
 
@@ -63,6 +66,13 @@ export interface DemoConfig {
     maxPlayers?: number;
     syncEvents?: Array<{ name: string; reliable?: boolean; throttle?: number }>;
   };
+}
+
+export interface DemoLocation {
+  layer: Layer;
+  communityId?: string;
+  communityName?: string;
+  categoryId: string;
 }
 
 export interface Demo {
@@ -89,6 +99,9 @@ export interface Demo {
   entryFile?: string; // Entry file path for multi-file projects
   projectSize?: number; // Project total size in bytes
   config?: DemoConfig; // AI-generated configuration
+  archived?: boolean; // Whether the demo is archived (soft deleted)
+  archivedAt?: number; // When the demo was archived
+  locations?: DemoLocation[]; // All locations where this demo is published
 }
 
 export interface User {

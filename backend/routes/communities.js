@@ -22,6 +22,7 @@ const mapCommunityRow = async (row) => {
     status: row.status,
     members: members.map((m) => m.user_id),
     pendingMembers: pendingMembers.map((m) => m.user_id),
+    type: row.type || 'closed',
     createdAt: row.created_at
   };
 };
@@ -53,7 +54,7 @@ const getCurrentUser = async (req) => {
 
 // GET /communities
 router.get('/', async (req, res) => {
-  const { status, userId } = req.query;
+  const { status, userId, type } = req.query;
   
   try {
     let query = `
@@ -66,6 +67,11 @@ router.get('/', async (req, res) => {
     if (status) {
       query += ' AND c.status = ?';
       params.push(status);
+    }
+    
+    if (type) {
+      query += ' AND c.type = ?';
+      params.push(type);
     }
     
     if (userId) {
@@ -86,7 +92,7 @@ router.get('/', async (req, res) => {
 
 // POST /communities
 router.post('/', async (req, res) => {
-  const { name, description } = req.body;
+  const { name, description, type = 'closed' } = req.body;
   const user = await requireUser(req, res);
   
   if (!user) {
@@ -99,9 +105,9 @@ router.post('/', async (req, res) => {
   
   try {
     await runQuery(`
-      INSERT INTO communities (id, name, description, creator_id, code, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [id, name, description, user.id, code, 'pending', now]);
+      INSERT INTO communities (id, name, description, creator_id, code, status, type, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [id, name, description, user.id, code, 'pending', type, now]);
     
     // Creator is automatically a member
     await runQuery(`
@@ -313,9 +319,51 @@ router.patch('/:id/code', async (req, res) => {
   }
 });
 
-// PATCH /communities/:id - Update community info (name, description, etc.)
+// POST /communities/:id/join - Join open community directly
+router.post('/:id/join', async (req, res) => {
+  const user = await requireUser(req, res);
+  
+  if (!user) {
+    return;
+  }
+  
+  try {
+    const community = await getRow('SELECT * FROM communities WHERE id = ?', [req.params.id]);
+    
+    if (!community) {
+      return res.status(404).json({ code: 404, message: 'Community not found', data: null });
+    }
+    
+    // Check if community is open
+    if (community.type !== 'open') {
+      return res.status(403).json({ code: 403, message: 'This community is not open', data: null });
+    }
+    
+    // Check if already a member
+    const existing = await getRow('SELECT * FROM community_members WHERE community_id = ? AND user_id = ?', 
+      [community.id, user.id]);
+    
+    if (existing) {
+      if (existing.status === 'member') {
+        return res.json({ code: 200, message: 'Already a member', data: community });
+      }
+      // Update pending to member
+      await runQuery('UPDATE community_members SET status = ? WHERE id = ?', ['member', existing.id]);
+    } else {
+      await runQuery('INSERT INTO community_members (community_id, user_id, status, joined_at) VALUES (?, ?, ?, ?)',
+        [community.id, user.id, 'member', Date.now()]);
+    }
+    
+    res.json({ code: 200, message: 'Joined successfully', data: await mapCommunityRow(community) });
+  } catch (error) {
+    console.error('Error joining community:', error);
+    res.status(500).json({ code: 500, message: 'Server error', data: null });
+  }
+});
+
+// PATCH /communities/:id - Update community info (name, description, type, etc.)
 router.patch('/:id', async (req, res) => {
-  const { name, description, members, pendingMembers } = req.body;
+  const { name, description, members, pendingMembers, type } = req.body;
   const user = await requireUser(req, res);
   
   if (!user) {
@@ -335,7 +383,7 @@ router.patch('/:id', async (req, res) => {
     }
     
     // Update basic info if provided
-    if (name !== undefined || description !== undefined) {
+    if (name !== undefined || description !== undefined || type !== undefined) {
       const updates = [];
       const params = [];
       
@@ -346,6 +394,10 @@ router.patch('/:id', async (req, res) => {
       if (description !== undefined) {
         updates.push('description = ?');
         params.push(description);
+      }
+      if (type !== undefined) {
+        updates.push('type = ?');
+        params.push(type);
       }
       
       if (updates.length > 0) {
@@ -512,6 +564,45 @@ router.get('/:id/bans', async (req, res) => {
   }
 });
 
+// POST /communities/:id/leave - Leave a community
+router.post('/:id/leave', async (req, res) => {
+  const user = await requireUser(req, res);
+  
+  if (!user) {
+    return;
+  }
+  
+  try {
+    const community = await getRow('SELECT * FROM communities WHERE id = ?', [req.params.id]);
+    if (!community) {
+      return res.status(404).json({ code: 404, message: 'Community not found', data: null });
+    }
+    
+    // Cannot leave if you're the creator
+    if (community.creator_id === user.id) {
+      return res.status(400).json({ code: 400, message: 'Creator cannot leave the community', data: null });
+    }
+    
+    // Check if member
+    const member = await getRow(
+      'SELECT * FROM community_members WHERE community_id = ? AND user_id = ? AND status = ?', 
+      [req.params.id, user.id, 'member']
+    );
+    
+    if (!member) {
+      return res.status(400).json({ code: 400, message: 'Not a member of this community', data: null });
+    }
+    
+    // Remove member
+    await runQuery('DELETE FROM community_members WHERE id = ?', [member.id]);
+    
+    res.json({ code: 200, message: 'Left community successfully', data: null });
+  } catch (error) {
+    console.error('Error leaving community:', error);
+    res.status(500).json({ code: 500, message: 'Server error', data: null });
+  }
+});
+
 // DELETE /communities/:id
 router.delete('/:id', async (req, res) => {
   const user = await requireUser(req, res);
@@ -538,8 +629,11 @@ router.delete('/:id', async (req, res) => {
     // Delete all categories for this community
     await runQuery('DELETE FROM categories WHERE community_id = ?', [req.params.id]);
     
-    // Delete all demos for this community
-    await runQuery('DELETE FROM demos WHERE community_id = ?', [req.params.id]);
+    // Do NOT archive demos, just set community_id to null so they stay in personal published work
+    await runQuery(
+      'UPDATE demos SET community_id = NULL WHERE community_id = ?',
+      [req.params.id]
+    );
     
     // Delete the community
     const result = await runQuery('DELETE FROM communities WHERE id = ?', [req.params.id]);
