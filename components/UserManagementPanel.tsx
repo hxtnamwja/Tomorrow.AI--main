@@ -7,12 +7,14 @@ interface UserManagementPanelProps {
   currentUserRole: UserRole;
   activeCommunity?: Community;
   onClose: () => void;
+  onViewUserProfile?: (userId: string) => void;
 }
 
 export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({
   currentUserRole,
   activeCommunity,
-  onClose
+  onClose,
+  onViewUserProfile
 }) => {
   const [users, setUsers] = useState<UserType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,15 +131,18 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({
                     className="flex items-center justify-between p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors"
                   >
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                        user.role === 'general_admin' ? 'bg-purple-100 text-purple-600' : 'bg-emerald-100 text-emerald-600'
-                      }`}>
+                      <button
+                        onClick={() => onViewUserProfile && onViewUserProfile(user.id)}
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-transform hover:scale-110 cursor-pointer ${
+                          user.role === 'general_admin' ? 'bg-purple-100 text-purple-600' : 'bg-emerald-100 text-emerald-600'
+                        }`}
+                      >
                         {user.role === 'general_admin' ? (
                           <ShieldCheck className="w-5 h-5" />
                         ) : (
                           <UserCircle className="w-5 h-5" />
                         )}
-                      </div>
+                      </button>
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-slate-800">{user.username}</span>

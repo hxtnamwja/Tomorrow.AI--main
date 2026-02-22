@@ -172,3 +172,12 @@ export interface CommunityBan {
   bannedBy: string;
   createdAt: number;
 }
+
+export interface DemoComment {
+  id: string;
+  demoId: string;
+  userId: string;
+  username: string;
+  content: string;
+  createdAt: number;
+}

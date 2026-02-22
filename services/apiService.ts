@@ -222,6 +222,26 @@ export const DemosAPI = {
     const result = await apiRequest<Demo[]>(`/demos/archived/by/${userId}`);
     return result.data;
   },
+
+  // Comments API
+  getComments: async (demoId: string): Promise<any[]> => {
+    const result = await apiRequest<any[]>(`/demos/${demoId}/comments`);
+    return result.data;
+  },
+
+  addComment: async (demoId: string, content: string): Promise<any> => {
+    const result = await apiRequest<any>(`/demos/${demoId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+    return result.data;
+  },
+
+  deleteComment: async (demoId: string, commentId: string): Promise<void> => {
+    await apiRequest<void>(`/demos/${demoId}/comments/${commentId}`, {
+      method: 'DELETE',
+    });
+  },
 };
 
 // Communities API

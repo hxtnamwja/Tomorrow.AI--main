@@ -7,7 +7,7 @@ import {
   ChevronDown, Satellite, UserCircle, Briefcase, Palette, Image as ImageIcon,
   Target, Award, CheckCircle, Clock, Edit3, Save, Play, RefreshCw, Camera,
   LogOut, LayoutDashboard, Settings, User as UserIcon, KeyRound, Building2, Zap, Heart,
-  HelpCircle, BookOpen, Menu, Send, MessageCircle, Repeat, MessageSquare
+  HelpCircle, BookOpen, Menu, Send, MessageCircle, Repeat, MessageSquare, Moon, Sun
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AiChatWidget } from './components/AiChatWidget';
@@ -58,6 +58,10 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [language, setLanguage] = useState<Language>('cn');
   const [role, setRole] = useState<UserRole>('user');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const saved = localStorage.getItem('sci_demo_theme');
+    return (saved as 'light' | 'dark') || 'light';
+  });
   const [currentUserId, setCurrentUserId] = useState<string>(''); // Simulated Session ID
   const [isBanned, setIsBanned] = useState<number>(0);
   const [banReason, setBanReason] = useState<string | undefined>(undefined);
@@ -149,6 +153,16 @@ export default function App() {
   const [viewingFeedback, setViewingFeedback] = useState<'my' | 'pending' | null>(null);
 
   const t = (key: keyof typeof DICTIONARY['en']) => getTranslation(language, key);
+
+  // Save theme to localStorage
+  useEffect(() => {
+    localStorage.setItem('sci_demo_theme', theme);
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -1140,6 +1154,20 @@ export default function App() {
 
         <div className="h-8 w-px bg-slate-200 mx-1 shrink-0"></div>
 
+        {/* Theme Toggle Button */}
+        <button
+          onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gradient-to-r from-slate-100 to-slate-50 text-slate-700 border border-slate-200 hover:shadow-md transition-all shrink-0"
+          title={theme === 'light' ? t('darkMode') : t('lightMode')}
+        >
+          {theme === 'light' ? (
+            <Moon className="w-4 h-4" />
+          ) : (
+            <Sun className="w-4 h-4" />
+          )}
+          <span className="hidden sm:inline">{theme === 'light' ? t('darkMode') : t('lightMode')}</span>
+        </button>
+
         {/* Website Feedback Button */}
         <button
           onClick={() => handleOpenFeedback('website_feedback', 'general')}
@@ -1731,7 +1759,7 @@ export default function App() {
          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                 <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                    <MessageSquare className="w-5 h-5 text-blue-500" /> 反馈/投诉处理
+                    <MessageSquare className="w-5 h-5 text-blue-500" /> {t('feedbackManagement')}
                 </h3>
                 <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-bold">{pendingFeedback.length}</span>
             </div>
@@ -1741,6 +1769,7 @@ export default function App() {
               isAdmin={true}
               currentUserRole={role}
               onUpdate={refreshAllData}
+              lang={language}
             />
          </div>
 
@@ -1942,6 +1971,7 @@ export default function App() {
         currentUserId={currentUserId}
         currentUserRole={role}
         t={t}
+        lang={language}
         onBack={() => {
           if (isViewingOther) {
             setViewingUserId(null);
@@ -2029,6 +2059,11 @@ export default function App() {
           currentUserRole={role}
           activeCommunity={activeCommunity}
           onClose={() => setIsUserManagementOpen(false)}
+          onViewUserProfile={(userId) => {
+            setIsUserManagementOpen(false);
+            setViewingUserId(userId);
+            setView('profile');
+          }}
         />
       )}
 
@@ -2190,6 +2225,7 @@ export default function App() {
           <DemoPlayer
             demo={selectedDemo}
             currentUserId={currentUserId}
+            currentUserRole={role}
             onClose={() => {
               setSelectedDemo(null);
               if (!wasViewingProfile) {

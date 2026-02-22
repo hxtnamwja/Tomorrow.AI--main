@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserRole, User as UserType, Community, Demo, Feedback } from '../types';
+import { UserRole, User as UserType, Community, Demo, Feedback, Language } from '../types';
 import { UserCircle, ShieldCheck, Edit3, Save, X, Mail, QrCode, BookOpen, Building2, Heart, Image as ImageIcon, MessageSquare, Archive, RotateCcw, Trash2 } from 'lucide-react';
 import { StorageService } from '../services/storageService';
 import { FeedbackAPI, DemosAPI } from '../services/apiService';
@@ -10,6 +10,7 @@ interface ProfilePageProps {
   currentUserId: string;
   currentUserRole: UserRole;
   t: (key: string) => string;
+  lang: Language;
   onBack: () => void;
   onOpenCommunity?: (communityId: string) => void;
   onOpenDemo?: (demo: Demo) => void;
@@ -24,6 +25,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   currentUserId,
   currentUserRole,
   t,
+  lang,
   onBack,
   onOpenCommunity,
   onOpenDemo,
@@ -487,7 +489,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         <div className="mt-6 glass-card rounded-2xl p-6">
           <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
             <BookOpen className="w-5 h-5" />
-            My Published Works
+            {t('myPublishedWorks')}
           </h2>
           <div className="grid gap-3">
             {userDemos.map((demo) => {
@@ -495,23 +497,23 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               
               const getLocationDisplay = (loc: any) => {
                 if (loc.layer === 'general') {
-                  return '通用知识库';
+                  return t('generalLibrary');
                 } else if (loc.layer === 'community' && loc.communityId) {
                   const community = communities.find(c => c.id === loc.communityId);
                   if (community) {
                     return community.name;
                   }
-                  return '暂时不归属于任何社区';
+                  return t('noCommunity');
                 }
-                return '通用知识库';
+                return t('generalLibrary');
               };
               
               const locations = demo.locations || [];
               const locationDisplay = locations.length > 0 
-                ? locations.map(getLocationDisplay).join('、') 
+                ? locations.map(getLocationDisplay).join(lang === 'en' ? ', ' : '、') 
                 : (demo.communityId 
-                    ? (communities.find(c => c.id === demo.communityId)?.name || '暂时不归属于任何社区')
-                    : '通用知识库');
+                    ? (communities.find(c => c.id === demo.communityId)?.name || t('noCommunity'))
+                    : t('generalLibrary'));
               
               const canDelete = isOwnProfile || currentUserRole === 'general_admin';
               
@@ -531,7 +533,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     </div>
                     <p className="text-sm text-slate-500 line-clamp-1 mb-1">{demo.description}</p>
                     <p className="text-xs text-indigo-600 font-medium">
-                      发布于：{locationDisplay}
+                      {t('publishedIn')}{locationDisplay}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
@@ -544,7 +546,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                         className="px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
                       >
                         <Archive className="w-3.5 h-3.5" />
-                        删除
+                        {t('delete')}
                       </button>
                     )}
                   </div>
@@ -559,13 +561,14 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         <div className="mt-6 glass-card rounded-2xl p-6">
           <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
             <MessageSquare className="w-5 h-5" />
-            我的反馈/投诉记录
+            {t('myFeedbacks')}
           </h2>
           <FeedbackList
             feedback={userFeedbacks}
             isAdmin={false}
             currentUserRole={currentUserRole}
             onUpdate={handleRefreshData}
+            lang={lang}
           />
         </div>
       )}
@@ -574,10 +577,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         <div className="mt-6 glass-card rounded-2xl p-6">
           <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
             <Archive className="w-5 h-5" />
-            留档区域
+            {t('archiveArea')}
           </h2>
           <p className="text-sm text-slate-500 mb-4">
-            这里保存了您所有被删除的程序，您可以恢复或永久删除它们。
+            {t('archivedDemosDesc')}
           </p>
           <div className="grid gap-3">
             {archivedDemos.map((demo) => {
@@ -593,12 +596,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="font-semibold text-slate-800">{demo.title}</h3>
                         <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
-                          留档
+                          {t('archived')}
                         </span>
                       </div>
                       <p className="text-sm text-slate-500 line-clamp-1 mb-2">{demo.description}</p>
                       <p className="text-xs text-slate-400">
-                        留档于 {demo.archivedAt ? new Date(demo.archivedAt).toLocaleString() : '未知时间'}
+                        {t('archivedAt')} {demo.archivedAt ? new Date(demo.archivedAt).toLocaleString() : t('unknownTime')}
                       </p>
                     </div>
                     <div className="flex flex-col gap-2">
@@ -607,7 +610,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                           onClick={(e) => { e.stopPropagation(); onOpenDemo(demo); }}
                           className="px-3 py-1.5 bg-slate-200 text-slate-700 hover:bg-slate-300 rounded-lg text-sm font-medium transition-colors"
                         >
-                          查看
+                          {t('view')}
                         </button>
                       )}
                       <button
@@ -615,7 +618,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                         className="px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        永久删除
+                        {t('permanentDelete')}
                       </button>
                     </div>
                   </div>

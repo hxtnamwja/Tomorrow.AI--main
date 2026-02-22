@@ -1,25 +1,30 @@
 import React, { useState } from 'react';
-import { Feedback, UserRole } from '../types';
+import { Feedback, UserRole, Language } from '../types';
 import { AlertTriangle, MessageSquare, Bug, CheckCircle2, Clock, XCircle, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { FeedbackAPI } from '../services/apiService';
+import { DICTIONARY } from '../constants';
 
 interface FeedbackListProps {
   feedback: Feedback[];
   isAdmin?: boolean;
   currentUserRole?: UserRole;
   onUpdate?: () => void;
+  lang?: Language;
 }
 
 const FeedbackList: React.FC<FeedbackListProps> = ({ 
   feedback, 
   isAdmin = false, 
   currentUserRole,
-  onUpdate 
+  onUpdate,
+  lang = 'en'
 }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [resolution, setResolution] = useState('');
+
+  const t = (key: string) => DICTIONARY[lang][key as keyof typeof DICTIONARY['en']] || key;
 
   const getTypeIcon = (type: string) => {
     switch (type) {
@@ -39,15 +44,15 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
   const getTypeLabel = (type: string) => {
     switch (type) {
       case 'demo_complaint':
-        return '演示投诉';
+        return t('demoComplaint');
       case 'community_feedback':
-        return '社区反馈';
+        return t('communityFeedback');
       case 'website_feedback':
-        return '网页建议';
+        return t('websiteFeedback');
       case 'ban_appeal':
-        return '解封申诉';
+        return t('banAppeal');
       default:
-        return '反馈';
+        return t('feedbackType');
     }
   };
 
@@ -84,13 +89,13 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
   const getStatusLabel = (status: string) => {
     switch (status) {
       case 'pending':
-        return '待处理';
+        return t('statusPending');
       case 'in_progress':
-        return '处理中';
+        return t('statusInProgress');
       case 'resolved':
-        return '已解决';
+        return t('statusResolved');
       case 'dismissed':
-        return '已驳回';
+        return t('statusDismissed');
       default:
         return status;
     }
@@ -100,43 +105,43 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
     setUpdatingId(id);
     try {
       await FeedbackAPI.updateStatus(id, status, status === 'resolved' || status === 'dismissed' ? resolution : undefined);
-      alert('状态更新成功！');
+      alert(t('statusUpdated'));
       setResolution('');
       if (onUpdate) onUpdate();
     } catch (error) {
       console.error('Error updating status:', error);
-      alert('更新失败，请重试');
+      alert(t('updateFailed'));
     } finally {
       setUpdatingId(null);
     }
   };
 
   const handleDeleteFeedback = async (id: string) => {
-    if (!confirm('确定要删除这条反馈/投诉记录吗？此操作不可撤销！')) {
+    if (!confirm(t('confirmDeleteFeedback'))) {
       return;
     }
     setDeletingId(id);
     try {
       await FeedbackAPI.delete(id);
-      alert('删除成功！');
+      alert(t('deleteSuccess'));
       if (onUpdate) onUpdate();
     } catch (error) {
       console.error('Error deleting feedback:', error);
-      alert('删除失败，请重试');
+      alert(t('deleteFailed'));
     } finally {
       setDeletingId(null);
     }
   };
 
   const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleString('zh-CN');
+    return new Date(timestamp).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN');
   };
 
   if (feedback.length === 0) {
     return (
       <div className="text-center py-12">
         <MessageSquare className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-        <h3 className="text-lg font-bold text-slate-600">暂无反馈记录</h3>
+        <h3 className="text-lg font-bold text-slate-600">{t('noFeedbackRecords')}</h3>
       </div>
     );
   }
@@ -161,7 +166,7 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
                   <h3 className="font-bold text-slate-800">{item.title}</h3>
                   {isBanAppeal && (
                     <span className="text-xs px-2 py-0.5 rounded-full bg-purple-600 text-white font-bold flex items-center gap-1">
-                      🔓 解封申诉
+                      🔓 {t('banAppeal')}
                     </span>
                   )}
                   <span className={`text-xs px-2 py-1 rounded-full flex items-center gap-1 ${getStatusColor(item.status)}`}>
@@ -184,31 +189,31 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
           {expandedId === item.id && (
             <div className="p-4 border-t border-slate-200 space-y-4">
               <div>
-                <h4 className="text-sm font-medium text-slate-700 mb-2">详细内容</h4>
+                <h4 className="text-sm font-medium text-slate-700 mb-2">{t('feedbackDetails')}</h4>
                 <p className="text-slate-600 whitespace-pre-wrap">{item.content}</p>
               </div>
               
               {item.demoTitle && (
                 <div className="bg-slate-50 p-3 rounded-lg">
-                  <p className="text-xs text-slate-500">相关演示程序</p>
+                  <p className="text-xs text-slate-500">{t('relatedDemo')}</p>
                   <p className="font-medium text-slate-800">{item.demoTitle}</p>
                 </div>
               )}
               
               {item.communityName && (
                 <div className="bg-slate-50 p-3 rounded-lg">
-                  <p className="text-xs text-slate-500">相关社区</p>
+                  <p className="text-xs text-slate-500">{t('relatedCommunity')}</p>
                   <p className="font-medium text-slate-800">{item.communityName}</p>
                 </div>
               )}
               
               {item.resolution && (
                 <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                  <h4 className="text-sm font-medium text-green-800 mb-2">处理结果</h4>
+                  <h4 className="text-sm font-medium text-green-800 mb-2">{t('resolution')}</h4>
                   <p className="text-green-700">{item.resolution}</p>
                   {item.reviewedAt && (
                     <p className="text-xs text-green-600 mt-2">
-                      处理时间：{formatDate(item.reviewedAt)}
+                      {t('reviewedAt')}{formatDate(item.reviewedAt)}
                     </p>
                   )}
                 </div>
@@ -222,14 +227,14 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
                     className="px-4 py-2 bg-red-100 text-red-700 text-sm font-bold rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50 flex items-center gap-2"
                   >
                     <Trash2 className="w-4 h-4" />
-                    删除记录
+                    {t('deleteRecord')}
                   </button>
                 </div>
               )}
               
               {isAdmin && (item.status === 'pending' || item.status === 'in_progress') && (
                 <div className="pt-4 border-t border-slate-200">
-                  <h4 className="text-sm font-medium text-slate-700 mb-3">更新状态</h4>
+                  <h4 className="text-sm font-medium text-slate-700 mb-3">{t('updateStatus')}</h4>
                   
                   {item.status === 'pending' && (
                     <div className="flex gap-2 mb-3">
@@ -238,14 +243,14 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
                         disabled={updatingId === item.id}
                         className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
                       >
-                        开始处理
+                        {t('startProcessing')}
                       </button>
                     </div>
                   )}
                   
                   <div className="space-y-3">
                     <textarea
-                      placeholder="输入处理结果（可选）..."
+                      placeholder={t('enterResolution')}
                       value={resolution}
                       onChange={(e) => setResolution(e.target.value)}
                       className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -257,14 +262,14 @@ const FeedbackList: React.FC<FeedbackListProps> = ({
                         disabled={updatingId === item.id}
                         className="px-4 py-2 bg-green-600 text-white text-sm font-bold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
                       >
-                        标记已解决
+                        {t('markResolved')}
                       </button>
                       <button
                         onClick={() => handleUpdateStatus(item.id, 'dismissed')}
                         disabled={updatingId === item.id}
                         className="px-4 py-2 bg-slate-600 text-white text-sm font-bold rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-50"
                       >
-                        驳回
+                        {t('dismiss')}
                       </button>
                     </div>
                   </div>

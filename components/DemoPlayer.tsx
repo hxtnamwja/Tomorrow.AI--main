@@ -1,18 +1,22 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, RefreshCw, Sparkles, Heart, Maximize2, Minimize2, Smartphone, Send, RotateCcw, Trash2, FolderOpen, AlertTriangle } from 'lucide-react';
+import { X, RefreshCw, Sparkles, Heart, Maximize2, Minimize2, Smartphone, Send, RotateCcw, Trash2, FolderOpen, AlertTriangle, Monitor, UserCircle, Trash } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Demo } from '../types';
 import { AiService } from '../services/aiService';
 import { DemosAPI } from '../services/apiService';
 import { AIMessageContent } from './AIMessageContent';
 
-export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLikeChange, onViewUserProfile, allUsers, onPublishToOther, onReportDemo }: { demo: Demo, currentUserId?: string, onClose: () => void, t: any, onOpenDemo?: (demoId: string) => void, onLikeChange?: (demoId: string, likeCount: number, userLiked: boolean) => void, onViewUserProfile?: (userId: string) => void, allUsers?: any[], onPublishToOther?: () => void, onReportDemo?: () => void }) => {
-  const [activeTab, setActiveTab] = useState<'concept' | 'code' | 'ai'>('concept');
+export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLikeChange, onViewUserProfile, allUsers, onPublishToOther, onReportDemo, currentUserRole }: { demo: Demo, currentUserId?: string, currentUserRole?: string, onClose: () => void, t: any, onOpenDemo?: (demoId: string) => void, onLikeChange?: (demoId: string, likeCount: number, userLiked: boolean) => void, onViewUserProfile?: (userId: string) => void, allUsers?: any[], onPublishToOther?: () => void, onReportDemo?: () => void }) => {
+  const [activeTab, setActiveTab] = useState<'basicInfo' | 'code' | 'ai'>('basicInfo');
   const [iframeKey, setIframeKey] = useState(0);
   const [aiMessages, setAiMessages] = useState<{role: 'user' | 'model', text: string}[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [codeViewMode, setCodeViewMode] = useState<'modified' | 'original'>('modified');
+  const [comments, setComments] = useState<any[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [commentActionLoading, setCommentActionLoading] = useState(false);
 
   // Check if this is a multi-file project
   const isMultiFile = demo.projectType === 'multi-file';
@@ -287,7 +291,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
   
   const handleEditSubmit = async () => {
     if (!editTitle.trim()) {
-      alert('请输入标题');
+      alert(t('pleaseEnterTitle'));
       return;
     }
     
@@ -318,17 +322,17 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
       const result = await response.json();
       
       if (result.code === 200) {
-        alert('更新提交成功！等待管理员审批。');
+        alert(t('updateSubmitted'));
         setIsEditModalOpen(false);
         setEditZipFile(null);
         setEditOriginalZipFile(null);
         onClose();
       } else {
-        alert(result.message || '更新失败');
+        alert(result.message || t('updateFailed'));
       }
     } catch (error) {
       console.error('Edit error:', error);
-      alert('更新失败');
+      alert(t('updateFailed'));
     } finally {
       setEditLoading(false);
     }
@@ -504,6 +508,9 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
   // Mobile fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
   const previewContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Control panel visibility
+  const [showControls, setShowControls] = useState(true);
   
   // Zoom state
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -744,6 +751,54 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
     }
   };
 
+  // Load comments
+  const loadComments = async () => {
+    setCommentsLoading(true);
+    try {
+      const data = await DemosAPI.getComments(demo.id);
+      setComments(data);
+    } catch (error) {
+      console.error('Error loading comments:', error);
+      setComments([]);
+    } finally {
+      setCommentsLoading(false);
+    }
+  };
+
+  // Add comment
+  const handleAddComment = async () => {
+    if (!newComment.trim() || commentActionLoading) return;
+    setCommentActionLoading(true);
+    try {
+      await DemosAPI.addComment(demo.id, newComment);
+      setNewComment('');
+      await loadComments();
+    } catch (error) {
+      console.error('Error adding comment:', error);
+    } finally {
+      setCommentActionLoading(false);
+    }
+  };
+
+  // Delete comment
+  const handleDeleteComment = async (commentId: string) => {
+    if (!confirm(t('confirmDeleteComment'))) return;
+    setCommentActionLoading(true);
+    try {
+      await DemosAPI.deleteComment(demo.id, commentId);
+      await loadComments();
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+    } finally {
+      setCommentActionLoading(false);
+    }
+  };
+
+  // Load comments when comments tab is active or demo changes
+  useEffect(() => {
+    loadComments();
+  }, [demo.id]);
+
   // Load AI messages from localStorage when component mounts
   useEffect(() => {
     const savedMessages = localStorage.getItem(`demo_${demo.id}_ai_messages`);
@@ -857,21 +912,25 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 bg-slate-900/95 backdrop-blur-md flex items-center justify-center p-0 md:p-6"
     >
-      <div className="w-full h-full bg-slate-900 md:rounded-2xl shadow-2xl relative flex flex-col md:flex-row overflow-hidden border border-slate-800">
-        <button 
-          onClick={onClose} 
-          className="absolute top-4 left-4 z-20 bg-black/30 hover:bg-black/50 backdrop-blur text-white p-2 rounded-lg transition-colors border border-white/20"
-          title={t('close')}
-        >
-          <X className="w-5 h-5" />
-        </button>
+      <div className={`w-full h-full bg-slate-900 md:rounded-2xl shadow-2xl relative flex flex-col md:flex-row overflow-hidden border border-slate-800 ${isFullscreen ? '!flex-col' : ''}`}>
+        {/* Only show close button when NOT fullscreen */}
+        {!isFullscreen && (
+          <button 
+            onClick={onClose} 
+            className="absolute top-4 left-4 z-20 bg-black/30 hover:bg-black/50 backdrop-blur text-white p-2 rounded-lg transition-colors border border-white/20"
+            title={t('close')}
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
 
-        {/* Left Side: Preview - Added explicit rounded-l-2xl to prevent square corners covering parent radius */}
+        {/* Left Side: Preview */}
         <div
           ref={previewContainerRef}
-          className={`flex-1 bg-slate-900 relative flex flex-col h-[50vh] md:h-full overflow-hidden md:rounded-l-2xl ${isFullscreen ? 'fixed inset-0 z-[100] h-screen w-screen !max-w-none !rounded-none' : ''}`}
+          className={`flex-1 bg-slate-900 relative flex flex-col ${isFullscreen ? 'h-full w-full fixed inset-0 z-[100] !max-w-none !rounded-none' : 'h-[50vh] md:h-full overflow-hidden md:rounded-l-2xl'}`}
         >
-          <div className={`flex-1 relative w-full bg-white overflow-auto ${isFullscreen ? 'h-[calc(100vh-56px)]' : ''}`}>
+          {/* Main Preview Area */}
+          <div className={`flex-1 relative w-full bg-white overflow-auto ${isFullscreen && showControls ? 'h-[calc(100vh-56px)]' : (isFullscreen ? 'h-full' : '')}`}>
             <div 
               className="w-full h-full origin-center transition-transform duration-200"
               style={{ transform: `scale(${zoomLevel})` }}
@@ -886,7 +945,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                 allow="fullscreen"
               />
             </div>
-            {/* Mobile Fullscreen Hint - Only show on small screens when not fullscreen */}
+            {/* Mobile Fullscreen Hint */}
             {!isFullscreen && (
               <div className="md:hidden absolute top-4 right-4 bg-indigo-600/90 backdrop-blur-sm text-white px-3 py-2 rounded-lg shadow-lg animate-pulse">
                 <div className="flex items-center gap-2">
@@ -896,7 +955,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
               </div>
             )}
             
-            {/* Rotate Hint - Show in fullscreen on mobile when in portrait */}
+            {/* Rotate Hint */}
             {isFullscreen && (
               <div 
                 className="md:hidden fixed inset-0 flex items-center justify-center bg-black/90 z-[200]" 
@@ -913,84 +972,109 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                     onClick={toggleFullscreen}
                     className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm transition-colors"
                   >
-                    退出全屏
+                    {t('exitFullscreen')}
                   </button>
                 </div>
               </div>
             )}
+
+            {/* Tap to show controls hint when controls are hidden in fullscreen - placed in bottom left corner */}
+            {isFullscreen && !showControls && (
+              <button 
+                className="absolute bottom-4 left-4 z-[101] bg-black/40 backdrop-blur-sm p-3 rounded-full text-white hover:bg-black/60 transition-all animate-in fade-in duration-200 shadow-lg"
+                onClick={() => setShowControls(true)}
+                title={t('tapToShowControls')}
+              >
+                <Monitor className="w-5 h-5" />
+              </button>
+            )}
           </div>
-          {/* Preview Controls - Always show in fullscreen */}
-          <div className={`h-14 bg-slate-800 border-t border-slate-700 flex items-center justify-between px-4 md:px-6 shrink-0 z-10 ${isFullscreen ? 'fixed bottom-0 left-0 right-0 z-[102]' : ''}`}>
-            <div className="flex items-center gap-3">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <h3 className="text-white font-medium text-sm truncate max-w-[150px] md:max-w-[200px]">{demo.title}</h3>
-              <span className="text-xs text-slate-400 bg-slate-700 px-2 py-0.5 rounded-full">{Math.round(zoomLevel * 100)}%</span>
+
+          {/* Preview Controls */}
+          {(showControls || !isFullscreen) && (
+            <div className={`h-14 bg-slate-800 border-t border-slate-700 flex items-center justify-between px-4 md:px-6 shrink-0 z-10 ${isFullscreen ? 'fixed bottom-0 left-0 right-0 z-[102]' : ''}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <h3 className="text-white font-medium text-sm truncate max-w-[150px] md:max-w-[200px]">{demo.title}</h3>
+                <span className="text-xs text-slate-400 bg-slate-700 px-2 py-0.5 rounded-full">{Math.round(zoomLevel * 100)}%</span>
+              </div>
+              <div className="flex items-center gap-1">
+                {/* Toggle Controls Button (only in fullscreen) */}
+                {isFullscreen && (
+                  <button
+                    onClick={() => setShowControls(!showControls)}
+                    className="p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg mr-2"
+                    title="Hide Controls"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+                {/* Zoom Out */}
+                <button
+                  onClick={handleZoomOut}
+                  disabled={zoomLevel <= minZoom}
+                  className="p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
+                  title={t('zoomOut')}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                </button>
+                {/* Reset Zoom */}
+                <button
+                  onClick={handleResetZoom}
+                  className="p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg"
+                  title={t('resetZoom')}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                </button>
+                {/* Zoom In */}
+                <button
+                  onClick={handleZoomIn}
+                  disabled={zoomLevel >= maxZoom}
+                  className="p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
+                  title={t('zoomIn')}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                </button>
+                {/* Refresh */}
+                <button
+                  onClick={() => {
+                    setIframeKey(k => k + 1);
+                    setZoomLevel(1);
+                  }}
+                  className="p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg"
+                  title={t('refresh')}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+                {/* Mobile Fullscreen Button */}
+                <button
+                  onClick={toggleFullscreen}
+                  className="md:hidden px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white transition-all rounded-lg flex items-center gap-2 shadow-lg shadow-indigo-600/30 active:scale-95 ml-2"
+                  title={isFullscreen ? t('exitFullscreen') : t('fullscreen')}
+                >
+                  {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
+                  <span className="text-xs font-bold">{isFullscreen ? t('exitFullscreen') : t('fullscreen')}</span>
+                </button>
+                {/* Desktop Fullscreen Button */}
+                <button
+                  onClick={toggleFullscreen}
+                  className="hidden md:flex p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg ml-2"
+                  title={isFullscreen ? t('exitFullscreen') : t('fullscreen')}
+                >
+                  {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-1">
-              {/* Zoom Out */}
-              <button
-                onClick={handleZoomOut}
-                disabled={zoomLevel <= minZoom}
-                className="p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
-                title="缩小"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-              </button>
-              {/* Reset Zoom */}
-              <button
-                onClick={handleResetZoom}
-                className="p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg"
-                title="重置缩放"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-              </button>
-              {/* Zoom In */}
-              <button
-                onClick={handleZoomIn}
-                disabled={zoomLevel >= maxZoom}
-                className="p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed"
-                title="放大"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-              </button>
-              {/* Refresh */}
-              <button
-                onClick={() => {
-                  setIframeKey(k => k + 1);
-                  setZoomLevel(1);
-                }}
-                className="p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg"
-                title="刷新"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-              {/* Mobile Fullscreen Button */}
-              <button
-                onClick={toggleFullscreen}
-                className="md:hidden px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white transition-all rounded-lg flex items-center gap-2 shadow-lg shadow-indigo-600/30 active:scale-95 ml-2"
-                title={isFullscreen ? t('exitFullscreen') || '退出全屏' : t('fullscreen') || '全屏显示'}
-              >
-                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
-                <span className="text-xs font-bold">{isFullscreen ? t('exitFullscreen') || '退出' : t('fullscreen') || '全屏'}</span>
-              </button>
-              {/* Desktop Fullscreen Button */}
-              <button
-                onClick={toggleFullscreen}
-                className="hidden md:flex p-2 text-slate-400 hover:text-white transition-colors hover:bg-slate-700 rounded-lg ml-2"
-                title={isFullscreen ? t('exitFullscreen') || '退出全屏' : t('fullscreen') || '全屏显示'}
-              >
-                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* Right Side: Sidebar - Added explicit rounded-r-2xl */}
-        <div 
-          ref={sidebarRef}
-          style={isDesktop ? { width: `${sidebarWidth}px` } : {}}
-          className="w-full md:w-auto bg-white flex flex-col h-[50vh] md:h-full overflow-hidden relative border-l border-slate-200 md:rounded-r-2xl"
-        >
+        {/* Right Side: Sidebar - Only show when NOT fullscreen */}
+        {!isFullscreen && (
+          <div 
+            ref={sidebarRef}
+            style={isDesktop ? { width: `${sidebarWidth}px` } : {}}
+            className="w-full md:w-auto bg-white flex flex-col h-[50vh] md:h-full overflow-hidden relative border-l border-slate-200 md:rounded-r-2xl"
+          >
           {/* Resize Handle - Only visible on desktop */}
           <div 
             className="hidden md:flex absolute left-0 top-0 bottom-0 w-4 -ml-2 cursor-ew-resize z-50 items-center justify-center group"
@@ -1010,20 +1094,20 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
 
           {/* Tabs */}
           <div className="flex border-b border-slate-200 shrink-0 bg-white">
-            {['concept', 'code', 'ai'].map((tab) => (
+            {['basicInfo', 'code', 'ai'].map((tab) => (
               <button 
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
                 className={`flex-1 py-4 text-sm font-medium border-b-2 transition-colors ${activeTab === tab ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
               >
-                {t(tab === 'ai' ? 'aiHelper' : tab === 'code' ? 'code' : 'concept')}
+                {t(tab === 'ai' ? 'aiHelper' : tab === 'code' ? 'code' : 'basicInfo')}
               </button>
             ))}
           </div>
 
           {/* Tab Content */}
           <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
-            {activeTab === 'concept' && (
+            {activeTab === 'basicInfo' && (
               <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
                  <div>
                    <div className="flex items-start justify-between gap-4">
@@ -1085,7 +1169,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                      className="w-full py-2 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-indigo-700 hover:to-purple-700 transition-all flex items-center justify-center gap-2 shadow-sm"
                    >
                      <FolderOpen className="w-4 h-4" />
-                     发布到其他平台
+                     {t('publishToOther')}
                    </button>
                  )}
                  
@@ -1095,7 +1179,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                      className="w-full py-2 px-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg text-sm font-medium hover:from-amber-600 hover:to-orange-600 transition-all flex items-center justify-center gap-2 shadow-sm mt-3"
                    >
                      <Sparkles className="w-4 h-4" />
-                     修改程序
+                     {t('editDemo')}
                    </button>
                  )}
                  
@@ -1105,17 +1189,77 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                      className="w-full py-2 px-4 bg-white border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-all flex items-center justify-center gap-2 shadow-sm mt-3"
                    >
                      <AlertTriangle className="w-4 h-4" />
-                     投诉此演示
+                     {t('reportDemo')}
                    </button>
                  )}
                  
-                 <div className="p-4 bg-white rounded-xl border border-indigo-100 shadow-sm mt-6">
-                   <h5 className="text-sm font-bold text-indigo-800 mb-2 flex items-center gap-2">
-                     <Sparkles className="w-4 h-4" /> {t('didYouKnow')}
-                   </h5>
-                   <p className="text-xs text-slate-600">
-                     {t('didYouKnowText')}
-                   </p>
+                 {/* Comments Section */}
+                 <div className="mt-8 pt-6 border-t border-slate-200">
+                   <h5 className="text-lg font-bold text-slate-800 mb-4">{t('comments')}</h5>
+                   
+                   {/* Comment Input */}
+                   {currentUserId && (
+                     <div className="flex gap-3 mb-6">
+                       <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                         <UserCircle className="w-5 h-5" />
+                       </div>
+                       <div className="flex-1 space-y-2">
+                         <textarea
+                           value={newComment}
+                           onChange={(e) => setNewComment(e.target.value)}
+                           placeholder={t('writeComment')}
+                           className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none resize-none"
+                           rows={3}
+                         />
+                         <button
+                           onClick={handleAddComment}
+                           disabled={!newComment.trim() || commentActionLoading}
+                           className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-indigo-700 hover:to-purple-700 transition-all disabled:opacity-50"
+                         >
+                           {t('sendComment')}
+                         </button>
+                       </div>
+                     </div>
+                   )}
+
+                   {/* Comments List */}
+                   <div className="space-y-4">
+                     {commentsLoading ? (
+                       <div className="flex items-center justify-center py-8">
+                         <div className="w-6 h-6 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+                       </div>
+                     ) : comments.length === 0 ? (
+                       <div className="text-center py-12 text-slate-400">
+                         {t('noComments')}
+                       </div>
+                     ) : (
+                       comments.map((comment) => (
+                         <div key={comment.id} className="flex gap-3 p-4 bg-white rounded-xl border border-slate-200">
+                           <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                             <UserCircle className="w-5 h-5" />
+                           </div>
+                           <div className="flex-1">
+                             <div className="flex items-start justify-between gap-2">
+                               <div>
+                                 <span className="font-semibold text-slate-800">{comment.username}</span>
+                                 <p className="text-xs text-slate-400 mt-1">{new Date(comment.created_at).toLocaleString()}</p>
+                               </div>
+                               {(currentUserRole === 'general_admin' || comment.user_id === currentUserId) && (
+                                 <button
+                                   onClick={() => handleDeleteComment(comment.id)}
+                                   disabled={commentActionLoading}
+                                   className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                 >
+                                   <Trash className="w-4 h-4" />
+                                 </button>
+                               )}
+                             </div>
+                             <p className="text-sm text-slate-600 mt-2">{comment.content}</p>
+                           </div>
+                         </div>
+                       ))
+                     )}
+                   </div>
                  </div>
               </div>
             )}
@@ -1127,7 +1271,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-bold text-indigo-800 flex items-center gap-2">
                         <Sparkles className="w-4 h-4" />
-                        AI配置版本
+                        {t('aiConfiguredVersion')}
                       </span>
                     </div>
                     <div className="flex gap-2 flex-wrap">
@@ -1139,7 +1283,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                             : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                         }`}
                       >
-                        修改后代码
+                        {t('modifiedCode')}
                       </button>
                       <button
                         onClick={() => setCodeViewMode('original')}
@@ -1149,7 +1293,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                             : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                         }`}
                       >
-                        原始代码
+                        {t('originalCode')}
                       </button>
                     </div>
                   </div>
@@ -1162,7 +1306,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-sm font-bold text-indigo-800 flex items-center gap-2">
                             <Sparkles className="w-4 h-4" />
-                            AI配置版本
+                            {t('aiConfiguredVersion')}
                           </span>
                         </div>
                         <div className="flex gap-2 flex-wrap">
@@ -1174,7 +1318,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                                 : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                             }`}
                           >
-                            修改后代码
+                            {t('modifiedCode')}
                           </button>
                           <button
                             onClick={() => setCodeViewMode('original')}
@@ -1184,7 +1328,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                                 : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                             }`}
                           >
-                            原始代码
+                            {t('originalCode')}
                           </button>
                         </div>
                       </div>
@@ -1246,7 +1390,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                      className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1"
                    >
                      <Trash2 className="w-3.5 h-3.5" />
-                     <span className="hidden sm:inline">清除历史</span>
+                     <span className="hidden sm:inline">{t('clearHistory')}</span>
                    </button>
                  </div>
                  <div className="flex-1 space-y-4 mb-4 overflow-y-auto">
@@ -1318,6 +1462,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
             )}
           </div>
         </div>
+        )}
       </div>
       
       {/* 编辑弹窗 */}
@@ -1326,7 +1471,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-slate-800">修改程序</h3>
+                <h3 className="text-xl font-bold text-slate-800">{t('editDemoTitle')}</h3>
                 <button
                   onClick={() => setIsEditModalOpen(false)}
                   className="text-slate-400 hover:text-slate-600"
@@ -1337,7 +1482,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
               
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">标题</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">{t('title')}</label>
                   <input
                     type="text"
                     value={editTitle}
@@ -1347,7 +1492,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">描述</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">{t('description')}</label>
                   <textarea
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
@@ -1357,7 +1502,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">上传新的文件（可选）</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">{t('uploadNewFile')}</label>
                   <input
                     type="file"
                     accept=".zip,.html,.htm"
@@ -1365,12 +1510,12 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                     className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   />
                   {editZipFile && (
-                    <p className="text-xs text-slate-500 mt-1">已选择: {editZipFile.name}</p>
+                    <p className="text-xs text-slate-500 mt-1">{t('selected')}: {editZipFile.name}</p>
                   )}
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">上传原始文件（可选）</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">{t('uploadOriginalFile')}</label>
                   <input
                     type="file"
                     accept=".zip"
@@ -1378,7 +1523,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                     className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                   />
                   {editOriginalZipFile && (
-                    <p className="text-xs text-slate-500 mt-1">已选择: {editOriginalZipFile.name}</p>
+                    <p className="text-xs text-slate-500 mt-1">{t('selected')}: {editOriginalZipFile.name}</p>
                   )}
                 </div>
                 
@@ -1387,7 +1532,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                     onClick={() => setIsEditModalOpen(false)}
                     className="flex-1 py-2 px-4 bg-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-300 transition-colors"
                   >
-                    取消
+                    {t('cancel')}
                   </button>
                   <button
                     onClick={handleEditSubmit}

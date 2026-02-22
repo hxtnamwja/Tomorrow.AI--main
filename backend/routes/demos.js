@@ -936,4 +936,114 @@ function analyzeProjectStructure(dir) {
   };
 }
 
+// ==================== COMMENT ROUTES ====================
+
+// GET /demos/:id/comments - Get all comments for a demo
+router.get('/:id/comments', async (req, res) => {
+  const demoId = req.params.id;
+  
+  try {
+    const comments = await getAllRows(
+      'SELECT * FROM demo_comments WHERE demo_id = ? ORDER BY created_at DESC',
+      [demoId]
+    );
+    
+    res.json({
+      code: 200,
+      message: 'Success',
+      data: comments
+    });
+  } catch (error) {
+    console.error('Error fetching comments:', error);
+    res.status(500).json({ code: 500, message: 'Server error', data: null });
+  }
+});
+
+// POST /demos/:id/comments - Add a comment to a demo
+router.post('/:id/comments', async (req, res) => {
+  const demoId = req.params.id;
+  const { content } = req.body;
+  
+  const user = await getCurrentUser(req);
+  
+  if (!user) {
+    return res.status(401).json({ code: 401, message: 'Unauthorized', data: null });
+  }
+  
+  if (!content || content.trim().length === 0) {
+    return res.status(400).json({ code: 400, message: 'Comment content is required', data: null });
+  }
+  
+  try {
+    const now = Date.now();
+    await runQuery(
+      'INSERT INTO demo_comments (demo_id, user_id, username, content, created_at) VALUES (?, ?, ?, ?, ?)',
+      [demoId, user.id, user.username, content.trim(), now]
+    );
+    
+    const comments = await getAllRows(
+      'SELECT * FROM demo_comments WHERE demo_id = ? ORDER BY created_at DESC',
+      [demoId]
+    );
+    
+    res.json({
+      code: 200,
+      message: 'Comment added successfully',
+      data: comments
+    });
+  } catch (error) {
+    console.error('Error adding comment:', error);
+    res.status(500).json({ code: 500, message: 'Server error', data: null });
+  }
+});
+
+// DELETE /demos/:id/comments/:commentId - Delete a comment
+router.delete('/:id/comments/:commentId', async (req, res) => {
+  const demoId = req.params.id;
+  const commentId = req.params.commentId;
+  
+  const user = await getCurrentUser(req);
+  
+  if (!user) {
+    return res.status(401).json({ code: 401, message: 'Unauthorized', data: null });
+  }
+  
+  try {
+    const comment = await getRow(
+      'SELECT * FROM demo_comments WHERE id = ? AND demo_id = ?',
+      [commentId, demoId]
+    );
+    
+    if (!comment) {
+      return res.status(404).json({ code: 404, message: 'Comment not found', data: null });
+    }
+    
+    const isOwner = comment.user_id === user.id;
+    const isAdmin = user.role === 'general_admin';
+    
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ code: 403, message: 'Not authorized to delete this comment', data: null });
+    }
+    
+    await runQuery(
+      'DELETE FROM demo_comments WHERE id = ?',
+      [commentId]
+    );
+    
+    const comments = await getAllRows(
+      'SELECT * FROM demo_comments WHERE demo_id = ? ORDER BY created_at DESC',
+      [demoId]
+    );
+    
+    res.json({
+      code: 200,
+      message: 'Comment deleted successfully',
+      data: comments
+    });
+  } catch (error) {
+    console.error('Error deleting comment:', error);
+    res.status(500).json({ code: 500, message: 'Server error', data: null });
+  }
+});
+
 export default router;
