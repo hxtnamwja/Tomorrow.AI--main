@@ -12,7 +12,20 @@ const mapUserRow = (row) => {
     banReason: row.ban_reason || undefined,
     contactInfo: row.contact_info || undefined,
     paymentQr: row.payment_qr || undefined,
-    bio: row.bio || undefined
+    bio: row.bio || undefined,
+    contributionPoints: row.contribution_points || 0,
+    points: row.points || 0,
+    favorites: row.favorites ? JSON.parse(row.favorites) : [],
+    avatarBorder: row.avatar_border || undefined,
+    avatarAccessory: row.avatar_accessory || undefined,
+    avatarEffect: row.avatar_effect || undefined,
+    usernameColor: row.username_color || undefined,
+    usernameEffect: row.username_effect || undefined,
+    profileTheme: row.profile_theme || undefined,
+    profileBackground: row.profile_background || undefined,
+    customTitle: row.custom_title || undefined,
+    unlockedAchievements: row.unlocked_achievements ? JSON.parse(row.unlocked_achievements) : [],
+    ownedItems: row.owned_items ? JSON.parse(row.owned_items) : []
   };
 };
 
@@ -67,7 +80,10 @@ router.get('/', async (req, res) => {
 
   try {
     const users = await getAllRows(`
-      SELECT id, username, role, created_at, is_banned, ban_reason, contact_info, bio 
+      SELECT id, username, role, created_at, is_banned, ban_reason, contact_info, bio, 
+             contribution_points, points, favorites, avatar_border, avatar_accessory, avatar_effect,
+             username_color, username_effect, profile_theme, profile_background, custom_title,
+             unlocked_achievements, owned_items
       FROM users 
       ORDER BY created_at DESC
     `);
@@ -83,7 +99,10 @@ router.get('/', async (req, res) => {
 router.get('/public', async (req, res) => {
   try {
     const users = await getAllRows(`
-      SELECT id, username, role, created_at, contact_info, bio, is_banned, ban_reason
+      SELECT id, username, role, created_at, contact_info, bio, is_banned, ban_reason,
+             contribution_points, points, favorites, avatar_border, avatar_accessory, avatar_effect,
+             username_color, username_effect, profile_theme, profile_background, custom_title,
+             unlocked_achievements, owned_items
       FROM users 
       WHERE is_banned = 0
       ORDER BY created_at DESC
@@ -143,7 +162,10 @@ router.get('/:id', async (req, res) => {
 
   try {
     const user = await getRow(`
-      SELECT id, username, role, created_at, is_banned, ban_reason, contact_info, payment_qr, bio
+      SELECT id, username, role, created_at, is_banned, ban_reason, contact_info, payment_qr, bio,
+             contribution_points, points, favorites, avatar_border, avatar_accessory, avatar_effect,
+             username_color, username_effect, profile_theme, profile_background, custom_title,
+             unlocked_achievements, owned_items
       FROM users 
       WHERE id = ?
     `, [id]);
@@ -217,7 +239,13 @@ router.put('/:id', async (req, res) => {
   }
 
   const { id } = req.params;
-  const { username, password, contactInfo, paymentQr, bio } = req.body;
+  const { 
+    username, password, contactInfo, paymentQr, bio,
+    contributionPoints, points, favorites,
+    avatarBorder, avatarAccessory, avatarEffect,
+    usernameColor, usernameEffect, profileTheme, profileBackground,
+    customTitle, unlockedAchievements, ownedItems
+  } = req.body;
 
   if (id !== currentUser.id && currentUser.role !== 'general_admin') {
     return res.status(403).json({ code: 403, message: 'Forbidden', data: null });
@@ -256,13 +284,83 @@ router.put('/:id', async (req, res) => {
       params.push(bio || null);
     }
 
+    // Only admin can update contribution points
+    if (currentUser.role === 'general_admin' && contributionPoints !== undefined) {
+      updates.push('contribution_points = ?');
+      params.push(contributionPoints);
+    }
+
+    // Both users and admins can update points (for shop purchases)
+    if (points !== undefined) {
+      updates.push('points = ?');
+      params.push(points);
+    }
+
+    if (favorites !== undefined) {
+      updates.push('favorites = ?');
+      params.push(JSON.stringify(favorites));
+    }
+
+    if (avatarBorder !== undefined) {
+      updates.push('avatar_border = ?');
+      params.push(avatarBorder || null);
+    }
+
+    if (avatarAccessory !== undefined) {
+      updates.push('avatar_accessory = ?');
+      params.push(avatarAccessory || null);
+    }
+
+    if (avatarEffect !== undefined) {
+      updates.push('avatar_effect = ?');
+      params.push(avatarEffect || null);
+    }
+
+    if (usernameColor !== undefined) {
+      updates.push('username_color = ?');
+      params.push(usernameColor || null);
+    }
+
+    if (usernameEffect !== undefined) {
+      updates.push('username_effect = ?');
+      params.push(usernameEffect || null);
+    }
+
+    if (profileTheme !== undefined) {
+      updates.push('profile_theme = ?');
+      params.push(profileTheme || null);
+    }
+
+    if (profileBackground !== undefined) {
+      updates.push('profile_background = ?');
+      params.push(profileBackground || null);
+    }
+
+    if (customTitle !== undefined) {
+      updates.push('custom_title = ?');
+      params.push(customTitle || null);
+    }
+
+    if (unlockedAchievements !== undefined) {
+      updates.push('unlocked_achievements = ?');
+      params.push(JSON.stringify(unlockedAchievements));
+    }
+
+    if (ownedItems !== undefined) {
+      updates.push('owned_items = ?');
+      params.push(JSON.stringify(ownedItems));
+    }
+
     if (updates.length > 0) {
       params.push(id);
       await runQuery(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
     }
 
     const updatedUser = await getRow(`
-      SELECT id, username, role, created_at, is_banned, ban_reason, contact_info, payment_qr, bio
+      SELECT id, username, role, created_at, is_banned, ban_reason, contact_info, payment_qr, bio,
+             contribution_points, points, favorites, avatar_border, avatar_accessory, avatar_effect,
+             username_color, username_effect, profile_theme, profile_background, custom_title,
+             unlocked_achievements, owned_items
       FROM users WHERE id = ?
     `, [id]);
 

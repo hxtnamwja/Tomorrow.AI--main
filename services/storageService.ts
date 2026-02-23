@@ -393,8 +393,51 @@ export const StorageService = {
     contactInfo?: string;
     paymentQr?: string;
     bio?: string;
+    contributionPoints?: number;
+    points?: number;
+    favorites?: string[];
+    avatarBorder?: string;
+    avatarAccessory?: string;
+    avatarEffect?: string;
+    profileTheme?: string;
+    profileBackground?: string;
+    usernameColor?: string;
+    usernameEffect?: string;
+    customTitle?: string;
+    unlockedAchievements?: string[];
+    ownedItems?: Array<{ type: string; id: string; purchasedAt: number }>;
   }): Promise<User> => {
     return await UsersAPI.update(id, data);
+  },
+
+  updateContributionPoints: async (userId: string, points: number) => {
+    return await UsersAPI.update(userId, { contributionPoints: points });
+  },
+
+  updatePoints: async (userId: string, points: number) => {
+    return await UsersAPI.update(userId, { points });
+  },
+
+  addFavorite: async (userId: string, demoId: string) => {
+    const user = await UsersAPI.getById(userId);
+    if (user) {
+      const favorites = user.favorites || [];
+      if (!favorites.includes(demoId)) {
+        return await UsersAPI.update(userId, { favorites: [...favorites, demoId] });
+      }
+    }
+    return user;
+  },
+
+  removeFavorite: async (userId: string, demoId: string) => {
+    const user = await UsersAPI.getById(userId);
+    if (user) {
+      const favorites = user.favorites || [];
+      return await UsersAPI.update(userId, { 
+        favorites: favorites.filter(id => id !== demoId) 
+      });
+    }
+    return user;
   },
 
   getUserStats: async (id: string): Promise<UserStats | null> => {

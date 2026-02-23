@@ -104,6 +104,101 @@ export interface Demo {
   locations?: DemoLocation[]; // All locations where this demo is published
 }
 
+export type UserLevel = 'learner' | 'researcher1' | 'researcher2' | 'researcher3' | 'co_creator';
+
+export interface AvatarBorder {
+  id: string;
+  name: string;
+  category: string;
+  color: string;
+  price: number;
+}
+
+export interface AvatarAccessory {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  icon?: string;
+  color?: string;
+  bg?: string;
+}
+
+export interface AvatarEffect {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  color?: string;
+  animation?: string;
+  bg?: string;
+}
+
+export interface ProfileTheme {
+  id: string;
+  name: string;
+  price: number;
+  colors: {
+    primary: string;
+    secondary: string;
+    background: string;
+  };
+}
+
+export interface ProfileBackground {
+  id: string;
+  name: string;
+  price: number;
+  pattern?: string;
+  colors?: {
+    accent1: string;
+    accent2: string;
+    accent3: string;
+  };
+  imageUrl?: string;
+}
+
+export interface UsernameColor {
+  id: string;
+  name: string;
+  category: string;
+  color: string;
+  price: number;
+}
+
+export interface UsernameEffect {
+  id: string;
+  name: string;
+  price: number;
+}
+
+export interface CustomTitle {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+}
+
+
+
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  unlocked: boolean;
+}
+
+export interface ProfileEffect {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  animation: string;
+  color: string;
+  bg?: string;
+}
+
 export interface User {
   id: string;
   username: string;
@@ -114,6 +209,22 @@ export interface User {
   contactInfo?: string;
   paymentQr?: string;
   bio?: string;
+  contributionPoints: number;
+  points: number;
+  level: UserLevel;
+  favorites: string[];
+  avatarBorder?: string;
+  usernameColor?: string;
+  profileTheme?: string;
+  avatarAccessory?: string;
+  avatarEffect?: string;
+  profileBackground?: string;
+  usernameEffect?: string;
+  customTitle?: string;
+  profileEffect?: string;
+  achievementWallStyle?: string;
+  unlockedAchievements: string[];
+  ownedItems: Array<{ type: string; id: string; purchasedAt: number }>;
 }
 
 export interface UserStats {

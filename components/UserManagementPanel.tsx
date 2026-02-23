@@ -1,7 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, User as UserType, Community } from '../types';
-import { UserCircle, ShieldCheck, Ban, CheckCircle, Edit3, X, Search } from 'lucide-react';
+import { UserCircle, ShieldCheck, Ban, CheckCircle, Edit3, X, Search, Award, Star, BookOpen, FlaskConical, Beaker, Trophy } from 'lucide-react';
 import { StorageService } from '../services/storageService';
+import { calculateLevel, getLevelInfo, LEVEL_CONFIG } from '../constants';
+
+// Level icon component
+const LevelIcon = ({ iconKey, className, color }: { iconKey: string, className?: string, color?: string }) => {
+  const iconProps = { className, color: color || undefined };
+  
+  switch (iconKey) {
+    case 'book-open':
+      return <BookOpen {...iconProps} />;
+    case 'flask-conical':
+      return <FlaskConical {...iconProps} />;
+    case 'beaker':
+      return <Beaker {...iconProps} />;
+    case 'award':
+      return <Award {...iconProps} />;
+    case 'trophy':
+      return <Trophy {...iconProps} />;
+    default:
+      return <BookOpen {...iconProps} />;
+  }
+};
 
 interface UserManagementPanelProps {
   currentUserRole: UserRole;
@@ -22,6 +43,9 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({
   const [selectedUser, setSelectedUser] = useState<UserType | null>(null);
   const [banReason, setBanReason] = useState('');
   const [isBanModalOpen, setIsBanModalOpen] = useState(false);
+  const [isEditPointsModalOpen, setIsEditPointsModalOpen] = useState(false);
+  const [editContributionPoints, setEditContributionPoints] = useState('');
+  const [editPoints, setEditPoints] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
   const loadUsers = async () => {
@@ -77,6 +101,34 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({
       await loadUsers();
     } catch (error: any) {
       alert(`解封失败: ${error.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleEditPoints = (user: UserType) => {
+    setSelectedUser(user);
+    setEditContributionPoints(String(user.contributionPoints || 0));
+    setEditPoints(String(user.points || 0));
+    setIsEditPointsModalOpen(true);
+  };
+
+  const confirmEditPoints = async () => {
+    if (!selectedUser) return;
+    setActionLoading(true);
+    try {
+      const newContributionPoints = parseInt(editContributionPoints) || 0;
+      const newPoints = parseInt(editPoints) || 0;
+      
+      await StorageService.updateUser(selectedUser.id, {
+        contributionPoints: newContributionPoints,
+        points: newPoints
+      });
+      
+      await loadUsers();
+      setIsEditPointsModalOpen(false);
+    } catch (error: any) {
+      alert(`修改失败: ${error.message}`);
     } finally {
       setActionLoading(false);
     }
@@ -156,37 +208,75 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({
                               管理员
                             </span>
                           )}
+                          <span 
+                            className="px-2 py-0.5 text-xs font-bold rounded-full flex items-center gap-1"
+                            style={{ 
+                              backgroundColor: `${getLevelInfo(calculateLevel(user.contributionPoints || 0, user.role === 'general_admin'), 'cn').color}20`,
+                              color: getLevelInfo(calculateLevel(user.contributionPoints || 0, user.role === 'general_admin'), 'cn').color
+                            }}
+                          >
+                            <LevelIcon 
+                              iconKey={LEVEL_CONFIG[calculateLevel(user.contributionPoints || 0, user.role === 'general_admin')].iconKey} 
+                              className="w-3 h-3"
+                              color={getLevelInfo(calculateLevel(user.contributionPoints || 0, user.role === 'general_admin'), 'cn').color}
+                            />
+                            {getLevelInfo(calculateLevel(user.contributionPoints || 0, user.role === 'general_admin'), 'cn').displayName}
+                          </span>
                         </div>
-                        <p className="text-xs text-slate-500">
+                        <div className="flex items-center gap-4 mt-1">
+                          <span className="text-xs text-slate-500 flex items-center gap-1">
+                            <Award className="w-3 h-3" />
+                            贡献值: {user.contributionPoints || 0}
+                          </span>
+                          <span className="text-xs text-slate-500 flex items-center gap-1">
+                            <Star className="w-3 h-3" />
+                            积分: {user.points || 0}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
                           {user.bio || '暂无简介'}
                           {user.banReason && <span className="text-red-500 ml-2">• 原因: {user.banReason}</span>}
                         </p>
                       </div>
                     </div>
 
-                    {user.role !== 'general_admin' && (
-                      <div className="flex items-center gap-2">
-                        {user.isBanned ? (
-                          <button
-                            onClick={() => handleUnban(user)}
-                            disabled={actionLoading}
-                            className="px-3 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                          >
-                            <CheckCircle className="w-4 h-4" />
-                            解封
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleBan(user)}
-                            disabled={actionLoading}
-                            className="px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                          >
-                            <Ban className="w-4 h-4" />
-                            封禁
-                          </button>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {/* Edit points button - available to general admin and community admins */}
+                      {user.role !== 'general_admin' && (
+                        <button
+                          onClick={() => handleEditPoints(user)}
+                          disabled={actionLoading}
+                          className="px-3 py-1.5 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                          修改
+                        </button>
+                      )}
+                      {/* Ban/unban buttons - only for general admin or community admin in community view */}
+                      {user.role !== 'general_admin' && (
+                        <>
+                          {user.isBanned ? (
+                            <button
+                              onClick={() => handleUnban(user)}
+                              disabled={actionLoading}
+                              className="px-3 py-1.5 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                              解封
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleBan(user)}
+                              disabled={actionLoading}
+                              className="px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                              <Ban className="w-4 h-4" />
+                              封禁
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))
               )}
@@ -224,6 +314,63 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({
                   className="flex-1 px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-xl font-medium transition-colors disabled:opacity-50"
                 >
                   {actionLoading ? '封禁中...' : '确认封禁'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isEditPointsModalOpen && selectedUser && (
+          <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+              <h3 className="text-lg font-bold text-slate-800 mb-2">修改贡献值和积分</h3>
+              <p className="text-sm text-slate-500 mb-4">
+                您正在修改 <span className="font-semibold">{selectedUser.username}</span> 的数据
+              </p>
+              
+              <div className="space-y-4 mb-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1 flex items-center gap-1">
+                    <Award className="w-3 h-3" />
+                    社区贡献值
+                  </label>
+                  <input
+                    type="number"
+                    value={editContributionPoints}
+                    onChange={(e) => setEditContributionPoints(e.target.value)}
+                    placeholder="输入贡献值"
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1 flex items-center gap-1">
+                    <Star className="w-3 h-3" />
+                    社区积分
+                  </label>
+                  <input
+                    type="number"
+                    value={editPoints}
+                    onChange={(e) => setEditPoints(e.target.value)}
+                    placeholder="输入积分"
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                  />
+                </div>
+              </div>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setIsEditPointsModalOpen(false)}
+                  className="flex-1 px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl font-medium transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={confirmEditPoints}
+                  disabled={actionLoading}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl font-medium transition-colors disabled:opacity-50"
+                >
+                  {actionLoading ? '保存中...' : '确认修改'}
                 </button>
               </div>
             </div>

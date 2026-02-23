@@ -473,6 +473,19 @@ export const UsersAPI = {
     contactInfo?: string;
     paymentQr?: string;
     bio?: string;
+    contributionPoints?: number;
+    points?: number;
+    favorites?: string[];
+    avatarBorder?: string;
+    avatarAccessory?: string;
+    avatarEffect?: string;
+    profileTheme?: string;
+    profileBackground?: string;
+    usernameColor?: string;
+    usernameEffect?: string;
+    customTitle?: string;
+    unlockedAchievements?: string[];
+    ownedItems?: Array<{ type: string; id: string; purchasedAt: number }>;
   }): Promise<User> => {
     const result = await apiRequest<User>(`/users/${id}`, {
       method: 'PUT',

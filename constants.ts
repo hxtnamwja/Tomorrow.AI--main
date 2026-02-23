@@ -285,7 +285,23 @@ export const DICTIONARY = {
     confirmDeleteComment: "Are you sure you want to delete this comment?",
     // Theme
     lightMode: "Light Mode",
-    darkMode: "Dark Mode"
+    darkMode: "Dark Mode",
+    // Levels & Points
+    level: "Level",
+    contributionPoints: "Contribution Points",
+    points: "Points",
+    levelLearner: "Learner",
+    levelResearcher1: "Junior Researcher",
+    levelResearcher2: "Senior Researcher",
+    levelResearcher3: "Principal Researcher",
+    levelCoCreator: "Co-Creator",
+    nextLevel: "Next Level",
+    pointsNeeded: "Points Needed",
+    privileges: "Privileges",
+    favorites: "Favorites",
+    noFavorites: "No favorites yet",
+    contributorWall: "Contributor Wall",
+    editContributionPoints: "Edit Contribution Points"
   },
   cn: {
     appTitle: "Tomorrow",
@@ -570,7 +586,23 @@ export const DICTIONARY = {
     confirmDeleteComment: "确定要删除这条评论吗？",
     // Theme
     lightMode: "亮色模式",
-    darkMode: "暗色模式"
+    darkMode: "暗色模式",
+    // Levels & Points
+    level: "等级",
+    contributionPoints: "社区贡献值",
+    points: "社区积分",
+    levelLearner: "学习者",
+    levelResearcher1: "一级研究员",
+    levelResearcher2: "二级研究员",
+    levelResearcher3: "三级研究员",
+    levelCoCreator: "共创研究员",
+    nextLevel: "下一等级",
+    pointsNeeded: "还需积分",
+    privileges: "已解锁特权",
+    favorites: "收藏夹",
+    noFavorites: "暂无收藏",
+    contributorWall: "贡献者墙",
+    editContributionPoints: "修改贡献值"
   }
 };
 
@@ -764,3 +796,537 @@ update();
 export const getTranslation = (lang: Language, key: keyof typeof DICTIONARY['en']) => {
   return DICTIONARY[lang][key] || key;
 };
+
+// Level Configuration
+export const LEVEL_CONFIG = {
+  learner: { min: 0, max: 9, name: { en: 'Learner', cn: '学习者' }, color: '#94a3b8', iconKey: 'book-open' },
+  researcher1: { min: 10, max: 99, name: { en: 'Junior Researcher', cn: '一级研究员' }, color: '#3b82f6', iconKey: 'flask-conical' },
+  researcher2: { min: 100, max: 199, name: { en: 'Senior Researcher', cn: '二级研究员' }, color: '#10b981', iconKey: 'beaker' },
+  researcher3: { min: 200, max: 299, name: { en: 'Principal Researcher', cn: '三级研究员' }, color: '#8b5cf6', iconKey: 'award' },
+  co_creator: { min: 300, max: Infinity, name: { en: 'Co-Creator', cn: '共创研究员' }, color: '#f59e0b', iconKey: 'trophy' }
+};
+
+// Privileges for each level
+export const LEVEL_PRIVILEGES = {
+  learner: {
+    cn: ['浏览演示', '评论', '收藏演示'],
+    en: ['Browse demos', 'Comment', 'Favorite demos'],
+    bonusPoints: 0,
+    requiresApproval: true
+  },
+  researcher1: {
+    cn: ['建立社区', '专属头像边框'],
+    en: ['Create communities', 'Exclusive avatar border'],
+    bonusPoints: 0,
+    requiresApproval: true
+  },
+  researcher2: {
+    cn: ['每次发布程序额外获得10积分'],
+    en: ['+10 bonus points per published demo'],
+    bonusPoints: 10,
+    requiresApproval: true
+  },
+  researcher3: {
+    cn: ['每次发布程序额外获得20积分', '建立社区（免审核）', '专属徽章展示'],
+    en: ['+20 bonus points per published demo', 'Create communities (no approval needed)', 'Exclusive badge display'],
+    bonusPoints: 20,
+    requiresApproval: false
+  },
+  co_creator: {
+    cn: ['名字出现在贡献者墙', '每次发布程序额外获得40积分'],
+    en: ['Name on Contributor Wall', '+40 bonus points per published demo'],
+    bonusPoints: 40,
+    requiresApproval: false
+  }
+};
+
+// Get bonus points for publishing a demo
+export const getBonusPointsForPublishing = (contributionPoints: number, isAdmin?: boolean): number => {
+  const level = calculateLevel(contributionPoints, isAdmin);
+  return LEVEL_PRIVILEGES[level].bonusPoints;
+};
+
+// Check if user can create community without approval
+export const canCreateCommunityWithoutApproval = (contributionPoints: number, isAdmin?: boolean): boolean => {
+  const level = calculateLevel(contributionPoints, isAdmin);
+  return !LEVEL_PRIVILEGES[level].requiresApproval;
+};
+
+// Check if user is on contributor wall
+export const isOnContributorWall = (contributionPoints: number, isAdmin?: boolean): boolean => {
+  const level = calculateLevel(contributionPoints, isAdmin);
+  return level === 'co_creator' || !!isAdmin;
+};
+
+// Check if user has exclusive badge display
+export const hasExclusiveBadgeDisplay = (contributionPoints: number, isAdmin?: boolean): boolean => {
+  const level = calculateLevel(contributionPoints, isAdmin);
+  return ['researcher3', 'co_creator'].includes(level) || !!isAdmin;
+};
+
+// Check if user has exclusive avatar border access
+export const hasExclusiveAvatarBorder = (contributionPoints: number, isAdmin?: boolean): boolean => {
+  const level = calculateLevel(contributionPoints, isAdmin);
+  return level !== 'learner' || !!isAdmin;
+};
+
+// Calculate level from contribution points
+export const calculateLevel = (points: number, isAdmin?: boolean): keyof typeof LEVEL_CONFIG => {
+  if (isAdmin) return 'co_creator';
+  if (points >= 300) return 'co_creator';
+  if (points >= 200) return 'researcher3';
+  if (points >= 100) return 'researcher2';
+  if (points >= 10) return 'researcher1';
+  return 'learner';
+};
+
+// Check if level is at least target level
+const LEVEL_ORDER = ['learner', 'researcher1', 'researcher2', 'researcher3', 'co_creator'] as const;
+export const isLevelAtLeast = (currentLevel: keyof typeof LEVEL_CONFIG, targetLevel: keyof typeof LEVEL_CONFIG): boolean => {
+  const currentIndex = LEVEL_ORDER.indexOf(currentLevel);
+  const targetIndex = LEVEL_ORDER.indexOf(targetLevel);
+  return currentIndex >= targetIndex;
+};
+
+// Get level info
+export const getLevelInfo = (level: keyof typeof LEVEL_CONFIG, lang: Language) => {
+  const config = LEVEL_CONFIG[level];
+  return {
+    ...config,
+    displayName: lang === 'en' ? config.name.en : config.name.cn
+  };
+};
+
+// Get points needed for next level
+export const getPointsToNextLevel = (currentPoints: number) => {
+  const level = calculateLevel(currentPoints);
+  const config = LEVEL_CONFIG[level];
+  if (config.max === Infinity) return 0;
+  return Math.max(0, config.max - currentPoints + 1);
+};
+
+// ============== Shop Items ==============
+
+// Avatar Borders - Premium Quality
+export const AVATAR_BORDERS = [
+  { id: 'border-platinum', name: '铂金边框', category: '奢华系列', color: 'linear-gradient(135deg, #e2e8f0 0%, #94a3b8 50%, #cbd5e1 100%)', price: 5 },
+  { id: 'border-gold', name: '黄金边框', category: '奢华系列', color: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%)', price: 5 },
+  { id: 'border-rose-gold', name: '玫瑰金边框', category: '奢华系列', color: 'linear-gradient(135deg, #fce7f3 0%, #f472b6 50%, #db2777 100%)', price: 5 },
+  { id: 'border-cyber-blue', name: '赛博蓝', category: '科技系列', color: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 50%, #0284c7 100%)', price: 5 },
+  { id: 'border-neon-pink', name: '霓虹粉', category: '科技系列', color: 'linear-gradient(135deg, #f0abfc 0%, #e879f9 50%, #c026d3 100%)', price: 5 },
+  { id: 'border-matrix-green', name: '矩阵绿', category: '科技系列', color: 'linear-gradient(135deg, #86efac 0%, #22c55e 50%, #15803d 100%)', price: 5 },
+  { id: 'border-aurora', name: '极光幻彩', category: '限定系列', color: 'linear-gradient(135deg, #06b6d4 0%, #10b981 30%, #f59e0b 60%, #f43f5e 100%)', price: 5 },
+  { id: 'border-forest-elite', name: '森林精英', category: '自然系列', color: 'linear-gradient(135deg, #86efac 0%, #10b981 50%, #065f46 100%)', price: 5 },
+  { id: 'border-ocean-deep', name: '深海之蓝', category: '自然系列', color: 'linear-gradient(135deg, #67e8f9 0%, #0ea5e9 50%, #0369a1 100%)', price: 5 },
+  { id: 'border-sunset-royal', name: '皇家日落', category: '自然系列', color: 'linear-gradient(135deg, #fed7aa 0%, #fb923c 50%, #c2410c 100%)', price: 5 },
+  { id: 'border-chinese-red', name: '中国红', category: '节日限定', color: 'linear-gradient(135deg, #fca5a5 0%, #ef4444 50%, #991b1b 100%)', price: 5 },
+  { id: 'border-christmas-elegant', name: '优雅圣诞', category: '节日限定', color: 'linear-gradient(135deg, #86efac 0%, #16a34a 50%, #14532d 100%)', price: 5 },
+  { id: 'border-halloween-spooky', name: '幽灵万圣', category: '节日限定', color: 'linear-gradient(135deg, #fde047 0%, #f97316 50%, #7c2d12 100%)', price: 5 },
+];
+
+// Avatar Accessories - Premium Quality
+export const AVATAR_ACCESSORIES = [
+  { id: 'accessory-nobel-crown', name: '诺贝尔皇冠', category: '成就至尊', price: 15, icon: 'crown', color: '#fbbf24', bg: 'linear-gradient(135deg, #fef3c7, #fde68a)' },
+  { id: 'accessory-physics-laureate', name: '物理桂冠', category: '科研精英', price: 8, icon: 'atom', color: '#3b82f6', bg: 'linear-gradient(135deg, #dbeafe, #bfdbfe)' },
+  { id: 'accessory-chemistry-flask', name: '化学烧瓶', category: '科研精英', price: 8, icon: 'flask', color: '#10b981', bg: 'linear-gradient(135deg, #d1fae5, #a7f3d0)' },
+  { id: 'accessory-math-compass', name: '数学圆规', category: '科研精英', price: 8, icon: 'compass', color: '#8b5cf6', bg: 'linear-gradient(135deg, #ede9fe, #ddd6fe)' },
+  { id: 'accessory-angel-wings', name: '天使翅膀', category: '梦幻系列', price: 10, icon: 'sparkles', color: '#f0abfc', bg: 'linear-gradient(135deg, #fdf4ff, #fae8ff)' },
+  { id: 'accessory-devil-horns', name: '恶魔犄角', category: '梦幻系列', price: 10, icon: 'flame', color: '#ef4444', bg: 'linear-gradient(135deg, #fee2e2, #fecaca)' },
+  { id: 'accessory-unicorn-horn', name: '独角兽角', category: '可爱梦幻', price: 9, icon: 'wand2', color: '#f472b6', bg: 'linear-gradient(135deg, #fdf2f8, #fce7f3)' },
+  { id: 'accessory-kitty-ears', name: '猫咪耳朵', category: '可爱系列', price: 5, icon: 'cat', color: '#f97316', bg: 'linear-gradient(135deg, #ffedd5, #fed7aa)' },
+  { id: 'accessory-bunny-fluffy', name: ' fluffy 兔子', category: '可爱系列', price: 5, icon: 'rabbit', color: '#ec4899', bg: 'linear-gradient(135deg, #fce7f3, #fbcfe8)' },
+  { id: 'accessory-star-halo', name: '星星光环', category: '可爱系列', price: 6, icon: 'star', color: '#fbbf24', bg: 'linear-gradient(135deg, #fef9c3, #fef08a)' },
+  { id: 'accessory-emperor-crown', name: '帝王冠', category: '皇家系列', price: 20, icon: 'crown', color: '#f59e0b', bg: 'linear-gradient(135deg, #fef3c7, #fcd34d)' },
+  { id: 'accessory-golden-trophy', name: '金奖杯', category: '皇家系列', price: 12, icon: 'trophy', color: '#eab308', bg: 'linear-gradient(135deg, #fefce8, #fef08a)' },
+  { id: 'accessory-diamond-medal', name: '钻石勋章', category: '皇家系列', price: 18, icon: 'gem', color: '#06b6d4', bg: 'linear-gradient(135deg, #ecfeff, #a5f3fc)' },
+  { id: 'accessory-santa-hat-premium', name: '高级圣诞帽', category: '节日限定', price: 8, icon: 'gift', color: '#ef4444', bg: 'linear-gradient(135deg, #fee2e2, #fca5a5)' },
+  { id: 'accessory-pumpkin-lantern', name: '南瓜灯笼', category: '节日限定', price: 7, icon: 'pumpkin', color: '#f97316', bg: 'linear-gradient(135deg, #ffedd5, #fed7aa)' },
+  { id: 'accessory-lantern-festival', name: '元宵灯笼', category: '节日限定', price: 8, icon: 'lightbulb', color: '#dc2626', bg: 'linear-gradient(135deg, #fee2e2, #fca5a5)' },
+];
+
+// Avatar Effects - Premium Quality
+export const AVATAR_EFFECTS = [
+  { id: 'effect-cosmic-glow', name: '宇宙辉光', category: '特效系列', price: 15, color: '#a78bfa', animation: 'glow', bg: 'linear-gradient(135deg, #0f172a, #1e293b)' },
+  { id: 'effect-electric-pulse', name: '电子脉冲', category: '特效系列', price: 12, color: '#06b6d4', animation: 'pulse', bg: 'linear-gradient(135deg, #0f172a, #020617)' },
+  { id: 'effect-magic-aura', name: '魔法光环', category: '特效系列', price: 13, color: '#f472b6', animation: 'aura', bg: 'linear-gradient(135deg, #1e1b4b, #312e81)' },
+  { id: 'effect-fire-dance', name: '火焰舞动', category: '动态特效', price: 16, color: '#f97316', animation: 'fire', bg: 'linear-gradient(135deg, #7c2d12, #9a3412)' },
+  { id: 'effect-water-flow', name: '水流涟漪', category: '动态特效', price: 16, color: '#0ea5e9', animation: 'water', bg: 'linear-gradient(135deg, #0c4a6e, #075985)' },
+  { id: 'effect-wind-swirle', name: '风之漩涡', category: '动态特效', price: 16, color: '#a3e635', animation: 'wind', bg: 'linear-gradient(135deg, #14532d, #166534)' },
+  { id: 'effect-aurora-borealis', name: '北极光', category: '限定特效', price: 25, color: '#10b981', animation: 'aurora', bg: 'linear-gradient(135deg, #020617, #0f172a, #1e3a8a)' },
+  { id: 'effect-supernova', name: '超新星爆发', category: '限定特效', price: 30, color: '#fbbf24', animation: 'supernova', bg: 'linear-gradient(135deg, #0f172a, #7c2d12, #dc2626)' },
+  { id: 'effect-quantum-flux', name: '量子涨落', category: '科技特效', price: 20, color: '#22d3ee', animation: 'quantum', bg: 'linear-gradient(135deg, #020617, #0f172a, #1e1b4b)' },
+  { id: 'effect-neon-flash', name: '霓虹闪烁', category: '科技特效', price: 14, color: '#f0abfc', animation: 'flash', bg: 'linear-gradient(135deg, #0f172a, #1e1b4b, #4c1d95)' },
+];
+
+// Profile Themes - Premium Quality (负责底色)
+export const PROFILE_THEMES = [
+  { id: 'theme-elegant-black', name: '深邃黑', price: 10, colors: { primary: '#0f172a', secondary: '#1e293b', background: '#0f172a' } },
+  { id: 'theme-elegant-white', name: '纯净白', price: 10, colors: { primary: '#f8fafc', secondary: '#f1f5f9', background: '#f8fafc' } },
+  { id: 'theme-elegant-navy', name: '海军蓝', price: 11, colors: { primary: '#0f172a', secondary: '#1e3a8a', background: '#0f172a' } },
+  { id: 'theme-elegant-burgundy', name: '酒红色', price: 11, colors: { primary: '#450a0a', secondary: '#7f1d1d', background: '#450a0a' } },
+  { id: 'theme-elegant-emerald', name: '祖母绿', price: 11, colors: { primary: '#064e3b', secondary: '#065f46', background: '#064e3b' } },
+  { id: 'theme-elegant-cream', name: '奶油色', price: 10, colors: { primary: '#fefce8', secondary: '#fef9c3', background: '#fefce8' } },
+  { id: 'theme-elegant-slate', name: '石板灰', price: 10, colors: { primary: '#1e293b', secondary: '#334155', background: '#1e293b' } },
+  { id: 'theme-elegant-amber', name: '琥珀色', price: 12, colors: { primary: '#451a03', secondary: '#78350f', background: '#451a03' } },
+];
+
+// Profile Backgrounds - Premium Quality (负责典雅高级花纹，设计感几何纹路)
+export const PROFILE_BACKGROUNDS = [
+  { 
+    id: 'bg-mosaic-diamond', 
+    name: '钻石马赛克', 
+    price: 12, 
+    pattern: 'mosaic-diamond',
+    colors: {
+      accent1: '#a78bfa',
+      accent2: '#8b5cf6',
+      accent3: '#7c3aed'
+    }
+  },
+  { 
+    id: 'bg-herringbone', 
+    name: '鱼骨纹', 
+    price: 13, 
+    pattern: 'herringbone',
+    colors: {
+      accent1: '#94a3b8',
+      accent2: '#64748b',
+      accent3: '#475569'
+    }
+  },
+  { 
+    id: 'bg-geometric-greek', 
+    name: '希腊回纹', 
+    price: 14, 
+    pattern: 'greek',
+    colors: {
+      accent1: '#d4af37',
+      accent2: '#b8860b',
+      accent3: '#8b7355'
+    }
+  },
+  { 
+    id: 'bg-modern-grid', 
+    name: '现代网格', 
+    price: 11, 
+    pattern: 'modern-grid',
+    colors: {
+      accent1: '#60a5fa',
+      accent2: '#3b82f6',
+      accent3: '#2563eb'
+    }
+  },
+  { 
+    id: 'bg-sacred-geometry', 
+    name: '神圣几何', 
+    price: 16, 
+    pattern: 'sacred',
+    colors: {
+      accent1: '#fbbf24',
+      accent2: '#f59e0b',
+      accent3: '#d97706'
+    }
+  },
+  { 
+    id: 'bg-art-deco-fan', 
+    name: '装饰艺术扇形', 
+    price: 15, 
+    pattern: 'art-deco-fan',
+    colors: {
+      accent1: '#e879f9',
+      accent2: '#c026d3',
+      accent3: '#9333ea'
+    }
+  },
+  { 
+    id: 'bg-hexagonal-hive', 
+    name: '六边形蜂巢', 
+    price: 13, 
+    pattern: 'hexagonal',
+    colors: {
+      accent1: '#34d399',
+      accent2: '#10b981',
+      accent3: '#059669'
+    }
+  },
+  { 
+    id: 'bg-moroccan-tile', 
+    name: '摩洛哥瓷砖', 
+    price: 17, 
+    pattern: 'moroccan',
+    colors: {
+      accent1: '#06b6d4',
+      accent2: '#0891b2',
+      accent3: '#0e7490'
+    }
+  },
+  { 
+    id: 'bg-checkerboard-soft', 
+    name: '柔和棋盘格', 
+    price: 10, 
+    pattern: 'checkerboard',
+    colors: {
+      accent1: '#f87171',
+      accent2: '#ef4444',
+      accent3: '#dc2626'
+    }
+  },
+  { 
+    id: 'bg-solar-system', 
+    name: '太阳系', 
+    price: 18, 
+    pattern: 'solar',
+    colors: {
+      accent1: '#fde68a',
+      accent2: '#fcd34d',
+      accent3: '#f59e0b'
+    }
+  },
+];
+
+// Username Colors - Premium Quality
+export const USERNAME_COLORS = [
+  { id: 'color-gold-elegant', name: '典雅金', category: '奢华系列', color: '#B8860B', price: 10 },
+  { id: 'color-purple-deep', name: '深邃紫', category: '奢华系列', color: '#6B46C1', price: 10 },
+  { id: 'color-blue-navy', name: '海军蓝', category: '奢华系列', color: '#1E40AF', price: 10 },
+  { id: 'color-rose-classic', name: '古典玫瑰', category: '珍稀系列', color: '#BE123C', price: 15 },
+  { id: 'color-teal-sage', name: '鼠尾草绿', category: '珍稀系列', color: '#0D9488', price: 15 },
+  { id: 'color-emerald-rich', name: '浓郁翠', category: '珍稀系列', color: '#059669', price: 15 },
+  { id: 'color-slate-cool', name: '清冷灰', category: '限定系列', color: '#475569', price: 18 },
+  { id: 'color-amber-warm', name: '温润琥珀', category: '限定系列', color: '#D97706', price: 20 },
+  { id: 'color-indigo-noble', name: '贵族靛蓝', category: '限定系列', color: '#4F46E5', price: 22 },
+  { id: 'color-cyan-calm', name: '宁静青', category: '科技系列', color: '#0891B2', price: 12 },
+  { id: 'color-red-crimson', name: '绯红', category: '特效系列', color: '#DC2626', price: 14 },
+  { id: 'color-violet-mysterious', name: '神秘紫', category: '特效系列', color: '#7C3AED', price: 14 },
+];
+
+// Username Effects - Premium Quality
+export const USERNAME_EFFECTS = [
+  { id: 'ueffect-sparkle-trail', name: '星光轨迹', price: 15, color: '#fbbf24', animation: 'sparkle', bg: 'linear-gradient(135deg, #1f2937, #374151)' },
+  { id: 'ueffect-neon-pulse', name: '霓虹脉冲', price: 14, color: '#f0abfc', animation: 'neon', bg: 'linear-gradient(135deg, #1f2937, #4c1d95)' },
+  { id: 'ueffect-fire-flame', name: '火焰燃烧', price: 18, color: '#f97316', animation: 'fire', bg: 'linear-gradient(135deg, #7c2d12, #9a3412)' },
+  { id: 'ueffect-water-ripple', name: '水波涟漪', price: 18, color: '#0ea5e9', animation: 'water', bg: 'linear-gradient(135deg, #0c4a6e, #075985)' },
+  { id: 'ueffect-lightning', name: '闪电闪烁', price: 16, color: '#facc15', animation: 'lightning', bg: 'linear-gradient(135deg, #1f2937, #374151)' },
+  { id: 'ueffect-glitter', name: '璀璨闪光', price: 15, color: '#ec4899', animation: 'glitter', bg: 'linear-gradient(135deg, #fdf2f8, #fce7f3)' },
+  { id: 'ueffect-quantum-glitch', name: '量子故障', price: 20, color: '#22d3ee', animation: 'glitch', bg: 'linear-gradient(135deg, #020617, #1f2937)' },
+  { id: 'ueffect-aurora-wave', name: '极光波动', price: 22, color: '#10b981', animation: 'aurora', bg: 'linear-gradient(135deg, #0f172a, #1e3a8a, #065f46)' },
+];
+
+// Custom Titles - Premium Quality
+export const CUSTOM_TITLES = [
+  { id: 'title-nobel-laureate', name: '诺贝尔奖得主', category: '至尊系列', price: 30 },
+  { id: 'title-genius-scientist', name: '天才科学家', category: '科研精英', price: 15 },
+  { id: 'title-physics-master', name: '物理学大师', category: '科研精英', price: 12 },
+  { id: 'title-chemistry-wizard', name: '化学巫师', category: '科研精英', price: 12 },
+  { id: 'title-math-genius', name: '数学天才', category: '科研精英', price: 12 },
+  { id: 'title-code-ninja', name: '代码忍者', category: '创意系列', price: 10 },
+  { id: 'title-digital-artist', name: '数字艺术家', category: '创意系列', price: 10 },
+  { id: 'title-imagineer', name: '梦想工程师', category: '创意系列', price: 10 },
+  { id: 'title-cosmic-explorer', name: '宇宙探索者', category: '探险系列', price: 13 },
+  { id: 'title-time-traveler', name: '时空旅行者', category: '探险系列', price: 13 },
+  { id: 'title-dragon-slayer', name: '屠龙勇士', category: '奇幻系列', price: 11 },
+  { id: 'title-phoenix-rider', name: '凤凰骑士', category: '奇幻系列', price: 11 },
+];
+
+// Profile Effects - Premium Quality (个人主页特效)
+export const PROFILE_EFFECTS = [
+  { 
+    id: 'effect-star-twinkle', 
+    name: '星光闪烁', 
+    category: '梦幻系列', 
+    price: 15, 
+    animation: 'star-twinkle',
+    color: '#fbbf24'
+  },
+  { 
+    id: 'effect-floating-particles', 
+    name: '粒子悬浮', 
+    category: '科技系列', 
+    price: 18, 
+    animation: 'floating-particles',
+    color: '#6366f1'
+  },
+  { 
+    id: 'effect-aurora-wave', 
+    name: '极光波动', 
+    category: '梦幻系列', 
+    price: 22, 
+    animation: 'aurora-wave',
+    color: '#10b981'
+  },
+  { 
+    id: 'effect-glow-pulse', 
+    name: '光晕脉动', 
+    category: '经典系列', 
+    price: 12, 
+    animation: 'glow-pulse',
+    color: '#8b5cf6'
+  },
+  { 
+    id: 'effect-rain-shimmer', 
+    name: '雨丝微光', 
+    category: '梦幻系列', 
+    price: 16, 
+    animation: 'rain-shimmer',
+    color: '#38bdf8'
+  },
+  { 
+    id: 'effect-firefly-dance', 
+    name: '萤火飞舞', 
+    category: '自然系列', 
+    price: 17, 
+    animation: 'firefly-dance',
+    color: '#facc15'
+  },
+  { 
+    id: 'effect-nebula-swirl', 
+    name: '星云漩涡', 
+    category: '宇宙系列', 
+    price: 25, 
+    animation: 'nebula-swirl',
+    color: '#ec4899'
+  },
+  { 
+    id: 'effect-gradient-flow', 
+    name: '渐变流动', 
+    category: '现代系列', 
+    price: 14, 
+    animation: 'gradient-flow',
+    color: '#06b6d4'
+  },
+];
+
+// App Themes - Premium Quality (有质感的配色方案)
+export const APP_THEMES = [
+  { 
+    id: 'app-theme-light', 
+    name: '明亮', 
+    category: '基础系列', 
+    price: 0, 
+    colors: { 
+      bg: '#f8fafc', 
+      card: '#ffffff', 
+      text: '#1e293b',
+      border: '#e2e8f0',
+      accent: '#6366f1'
+    } 
+  },
+  { 
+    id: 'app-theme-dark', 
+    name: '深邃', 
+    category: '基础系列', 
+    price: 0, 
+    colors: { 
+      bg: '#0f172a', 
+      card: '#1e293b', 
+      text: '#f1f5f9',
+      border: '#334155',
+      accent: '#818cf8'
+    } 
+  },
+  { 
+    id: 'app-theme-slate', 
+    name: '石板灰', 
+    category: '经典系列', 
+    price: 15, 
+    colors: { 
+      bg: '#1e293b', 
+      card: '#334155', 
+      text: '#f8fafc',
+      border: '#475569',
+      accent: '#94a3b8'
+    } 
+  },
+  { 
+    id: 'app-theme-ocean', 
+    name: '海洋蓝', 
+    category: '经典系列', 
+    price: 15, 
+    colors: { 
+      bg: '#0c4a6e', 
+      card: '#075985', 
+      text: '#f0f9ff',
+      border: '#0369a1',
+      accent: '#38bdf8'
+    } 
+  },
+  { 
+    id: 'app-theme-forest', 
+    name: '森林绿', 
+    category: '经典系列', 
+    price: 15, 
+    colors: { 
+      bg: '#064e3b', 
+      card: '#065f46', 
+      text: '#f0fdf4',
+      border: '#047857',
+      accent: '#34d399'
+    } 
+  },
+  { 
+    id: 'app-theme-warm', 
+    name: '暖棕', 
+    category: '经典系列', 
+    price: 15, 
+    colors: { 
+      bg: '#1c1917', 
+      card: '#292524', 
+      text: '#fefce8',
+      border: '#44403c',
+      accent: '#fbbf24'
+    } 
+  },
+  { 
+    id: 'app-theme-midnight', 
+    name: '午夜紫', 
+    category: '限定系列', 
+    price: 20, 
+    colors: { 
+      bg: '#1e1b4b', 
+      card: '#312e81', 
+      text: '#eef2ff',
+      border: '#4338ca',
+      accent: '#a78bfa'
+    } 
+  },
+  { 
+    id: 'app-theme-rose', 
+    name: '玫瑰金', 
+    category: '限定系列', 
+    price: 20, 
+    colors: { 
+      bg: '#4c0519', 
+      card: '#831843', 
+      text: '#fce7f3',
+      border: '#9f1239',
+      accent: '#f472b6'
+    } 
+  },
+];
+
+
+
+// Achievements - Auto-unlocked, not for sale
+export const ACHIEVEMENTS = [
+  { id: 'achievement-first-demo', name: '初出茅庐', description: '发布第一个演示', requirement: '发布1个演示' },
+  { id: 'achievement-5-demos', name: '小有成就', description: '发布5个演示', requirement: '发布5个演示' },
+  { id: 'achievement-20-demos', name: '著作等身', description: '发布20个演示', requirement: '发布20个演示' },
+  { id: 'achievement-100-likes', name: '人气王', description: '获得100个点赞', requirement: '获得100个点赞' },
+  { id: 'achievement-10-communities', name: '社交达人', description: '加入10个社区', requirement: '加入10个社区' },
+  { id: 'achievement-50-comments', name: '评论专家', description: '发表50条评论', requirement: '发表50条评论' },
+  { id: 'achievement-30-favorites', name: '收藏爱好者', description: '收藏30个演示', requirement: '收藏30个演示' },
+  { id: 'achievement-year-veteran', name: '年度老兵', description: '注册满一年', requirement: '注册满一年' },
+  { id: 'achievement-helpful-hand', name: '助人为乐', description: '帮助10位用户', requirement: '帮助10位用户' },
+  { id: 'achievement-perfect-review', name: '完美评审', description: '审核通过50个程序', requirement: '审核通过50个程序' },
+];
+
+// Achievement Wall Styles
+export const ACHIEVEMENT_WALL_STYLES = [
+  { id: 'wall-golden-frame', name: '金色相框', price: 8 },
+  { id: 'wall-crystal-display', name: '水晶展示', price: 10 },
+  { id: 'wall-neon-showcase', name: '霓虹橱窗', price: 12 },
+  { id: 'wall-royal-gallery', name: '皇家画廊', price: 15 },
+  { id: 'wall-cosmic-exhibition', name: '宇宙展厅', price: 18 },
+  { id: 'wall-magic-podium', name: '魔法展台', price: 20 },
+];
+

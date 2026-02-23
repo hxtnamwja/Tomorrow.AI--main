@@ -198,12 +198,51 @@ router.patch('/:id/status', async (req, res) => {
   const { status, rejectionReason } = req.body;
   
   try {
+    // First get the current demo to check the old status
+    const oldDemo = await getRow('SELECT * FROM demos WHERE id = ?', [req.params.id]);
+    
+    if (!oldDemo) {
+      return res.status(404).json({ code: 404, message: 'Demo not found', data: null });
+    }
+    
     const result = await runQuery(`
       UPDATE demos SET status = ?, rejection_reason = ? WHERE id = ?
     `, [status, rejectionReason || null, req.params.id]);
     
     if (result.changes === 0) {
       return res.status(404).json({ code: 404, message: 'Demo not found', data: null });
+    }
+    
+    // If status is changing to published from pending, award points
+    if (status === 'published' && oldDemo.status === 'pending' && oldDemo.creator_id) {
+      // Get the current user to check their level
+      const user = await getRow('SELECT * FROM users WHERE id = ?', [oldDemo.creator_id]);
+      
+      if (user) {
+        let bonusPoints = 0;
+        const contributionPoints = user.contribution_points || 0;
+        
+        // Determine bonus points based on user's current level
+        if (contributionPoints >= 300) {
+          // Co-Creator: +40 bonus points
+          bonusPoints = 40;
+        } else if (contributionPoints >= 200) {
+          // Principal Researcher: +20 bonus points
+          bonusPoints = 20;
+        } else if (contributionPoints >= 100) {
+          // Senior Researcher: +10 bonus points
+          bonusPoints = 10;
+        }
+        
+        // Add base 10 contribution points and any bonus points
+        const newContributionPoints = (user.contribution_points || 0) + 10;
+        const newPoints = (user.points || 0) + 10 + bonusPoints;
+        
+        await runQuery(
+          'UPDATE users SET contribution_points = ?, points = ? WHERE id = ?',
+          [newContributionPoints, newPoints, oldDemo.creator_id]
+        );
+      }
     }
     
     const demo = await getRow('SELECT * FROM demos WHERE id = ?', [req.params.id]);

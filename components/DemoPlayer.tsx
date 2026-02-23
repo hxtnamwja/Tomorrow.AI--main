@@ -1,10 +1,31 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, RefreshCw, Sparkles, Heart, Maximize2, Minimize2, Smartphone, Send, RotateCcw, Trash2, FolderOpen, AlertTriangle, Monitor, UserCircle, Trash } from 'lucide-react';
+import { X, RefreshCw, Sparkles, Heart, Maximize2, Minimize2, Smartphone, Send, RotateCcw, Trash2, FolderOpen, AlertTriangle, Monitor, UserCircle, Trash, Award, BookOpen, FlaskConical, Beaker, Trophy } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Demo } from '../types';
 import { AiService } from '../services/aiService';
 import { DemosAPI } from '../services/apiService';
 import { AIMessageContent } from './AIMessageContent';
+import { calculateLevel, getLevelInfo, LEVEL_CONFIG } from '../constants';
+
+// Level icon component
+const LevelIcon = ({ iconKey, className, color }: { iconKey: string, className?: string, color?: string }) => {
+  const iconProps = { className, color: color || undefined };
+  
+  switch (iconKey) {
+    case 'book-open':
+      return <BookOpen {...iconProps} />;
+    case 'flask-conical':
+      return <FlaskConical {...iconProps} />;
+    case 'beaker':
+      return <Beaker {...iconProps} />;
+    case 'award':
+      return <Award {...iconProps} />;
+    case 'trophy':
+      return <Trophy {...iconProps} />;
+    default:
+      return <BookOpen {...iconProps} />;
+  }
+};
 
 export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLikeChange, onViewUserProfile, allUsers, onPublishToOther, onReportDemo, currentUserRole }: { demo: Demo, currentUserId?: string, currentUserRole?: string, onClose: () => void, t: any, onOpenDemo?: (demoId: string) => void, onLikeChange?: (demoId: string, likeCount: number, userLiked: boolean) => void, onViewUserProfile?: (userId: string) => void, allUsers?: any[], onPublishToOther?: () => void, onReportDemo?: () => void }) => {
   const [activeTab, setActiveTab] = useState<'basicInfo' | 'code' | 'ai'>('basicInfo');
@@ -1129,33 +1150,67 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                        <span>{likeCount}</span>
                      </button>
                    </div>
-                   <div className="flex items-center gap-2 text-xs text-slate-500">
-                     <span className="bg-white border border-slate-200 px-2 py-0.5 rounded font-medium text-indigo-600">
-                       {demo.layer === 'general' ? demo.categoryId : t('communityRoot')}
-                     </span>
-                     <span>
-                       {t('by')}{' '}
-                       {onViewUserProfile ? (
-                         <button 
-                           onClick={() => {
-                             if (demo.creatorId) {
-                               onViewUserProfile(demo.creatorId);
-                             } else if (allUsers) {
-                               const user = allUsers.find(u => u.username === demo.author);
-                               if (user) {
-                                 onViewUserProfile(user.id);
+                   <div className="flex items-center justify-between gap-4 text-xs text-slate-500 flex-wrap">
+                     <div className="flex items-center gap-2 flex-wrap">
+                       <span className="bg-white border border-slate-200 px-2 py-0.5 rounded font-medium text-indigo-600">
+                         {demo.layer === 'general' ? demo.categoryId : t('communityRoot')}
+                       </span>
+                       <span>
+                         {t('by')}{' '}
+                         {onViewUserProfile ? (
+                           <button 
+                             onClick={() => {
+                               if (demo.creatorId) {
+                                 onViewUserProfile(demo.creatorId);
+                               } else if (allUsers) {
+                                 const user = allUsers.find(u => u.username === demo.author);
+                                 if (user) {
+                                   onViewUserProfile(user.id);
+                                 }
                                }
-                             }
-                           }}
-                           className="text-indigo-600 hover:text-indigo-800 font-medium hover:underline transition-colors"
-                         >
-                           {demo.author}
-                         </button>
-                       ) : (
-                         <span>{demo.author}</span>
-                       )}
-                     </span>
-                     <span>• {new Date(demo.createdAt).toLocaleDateString()}</span>
+                             }}
+                             className="text-indigo-600 hover:text-indigo-800 font-medium hover:underline transition-colors"
+                           >
+                             {demo.author}
+                           </button>
+                         ) : (
+                           <span>{demo.author}</span>
+                         )}
+                       </span>
+                       <span>• {new Date(demo.createdAt).toLocaleDateString()}</span>
+                     </div>
+                     {/* User Level Badge */}
+                     {(() => {
+                       let authorUser = null;
+                       if (demo.creatorId && allUsers) {
+                         authorUser = allUsers.find(u => u.id === demo.creatorId);
+                       } else if (allUsers) {
+                         authorUser = allUsers.find(u => u.username === demo.author);
+                       }
+                       
+                       if (authorUser) {
+                         const isAdmin = authorUser.role === 'general_admin';
+                         const levelInfo = getLevelInfo(calculateLevel(authorUser.contributionPoints || 0, isAdmin), 'cn');
+                         const levelConfig = LEVEL_CONFIG[calculateLevel(authorUser.contributionPoints || 0, isAdmin)];
+                         return (
+                           <span 
+                             className="px-2 py-0.5 rounded font-bold flex items-center gap-1"
+                             style={{ 
+                               backgroundColor: `${levelInfo.color}20`,
+                               color: levelInfo.color
+                             }}
+                           >
+                             <LevelIcon 
+                               iconKey={levelConfig.iconKey} 
+                               className="w-3.5 h-3.5"
+                               color={levelInfo.color}
+                             />
+                             {levelInfo.displayName}
+                           </span>
+                         );
+                       }
+                       return null;
+                     })()}
                    </div>
                  </div>
                  
