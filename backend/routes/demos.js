@@ -10,12 +10,20 @@ const router = Router();
 const mapDemoRow = (row) => {
   if (!row) return null;
   let config = undefined;
+  let tags = [];
   try {
     if (row.config) {
       config = JSON.parse(row.config);
     }
   } catch (e) {
     config = undefined;
+  }
+  try {
+    if (row.tags) {
+      tags = JSON.parse(row.tags);
+    }
+  } catch (e) {
+    tags = [];
   }
   return {
     id: row.id,
@@ -40,7 +48,8 @@ const mapDemoRow = (row) => {
     projectSize: row.project_size || 0,
     config,
     archived: row.archived ? true : false,
-    archivedAt: row.archived_at || undefined
+    archivedAt: row.archived_at || undefined,
+    tags
   };
 };
 
@@ -153,7 +162,7 @@ router.get('/', async (req, res) => {
 
 // POST /demos
 router.post('/', async (req, res) => {
-  const { title, description, categoryId, layer, communityId, code, originalCode, config, bountyId } = req.body;
+  const { title, description, categoryId, layer, communityId, code, originalCode, config, bountyId, tags } = req.body;
   
   const user = await getCurrentUser(req);
   const resolvedAuthor = user ? user.username : 'Anonymous';
@@ -164,10 +173,11 @@ router.post('/', async (req, res) => {
   
   try {
     const configJson = config ? JSON.stringify(config) : null;
+    const tagsJson = tags ? JSON.stringify(tags) : null;
     await runQuery(`
-      INSERT INTO demos (id, title, description, category_id, layer, community_id, code, original_code, config, author, creator_id, status, bounty_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [id, title, description, categoryId, layer, communityId || null, code, originalCode || null, configJson, resolvedAuthor, creatorId, 'pending', bountyId || null, now]);
+      INSERT INTO demos (id, title, description, category_id, layer, community_id, code, original_code, config, tags, author, creator_id, status, bounty_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [id, title, description, categoryId, layer, communityId || null, code, originalCode || null, configJson, tagsJson, resolvedAuthor, creatorId, 'pending', bountyId || null, now]);
     
     const demo = await getRow('SELECT * FROM demos WHERE id = ?', [id]);
     res.json({ code: 200, message: 'Success', data: mapDemoRow(demo) });
@@ -340,6 +350,46 @@ router.post('/:id/restore', async (req, res) => {
     res.json({ code: 200, message: 'Demo restored successfully', data: mapDemoRow(updatedDemo) });
   } catch (error) {
     console.error('Error restoring demo:', error);
+    res.status(500).json({ code: 500, message: 'Server error', data: null });
+  }
+});
+
+// PATCH /demos/:id/tags - Update demo tags
+router.patch('/:id/tags', async (req, res) => {
+  const { tags } = req.body;
+  
+  try {
+    const user = await getCurrentUser(req);
+    if (!user) {
+      return res.status(401).json({ code: 401, message: 'Not authenticated', data: null });
+    }
+    
+    const demo = await getRow('SELECT * FROM demos WHERE id = ?', [req.params.id]);
+    if (!demo) {
+      return res.status(404).json({ code: 404, message: 'Demo not found', data: null });
+    }
+    
+    const isOwner = demo.creator_id === user.id;
+    const isAdmin = user.role === 'general_admin';
+    
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ code: 403, message: 'Not authorized to update tags', data: null });
+    }
+    
+    const tagsJson = tags ? JSON.stringify(tags) : null;
+    const result = await runQuery(
+      'UPDATE demos SET tags = ?, updated_at = ? WHERE id = ?',
+      [tagsJson, Date.now(), req.params.id]
+    );
+    
+    if (result.changes === 0) {
+      return res.status(404).json({ code: 404, message: 'Demo not found', data: null });
+    }
+    
+    const updatedDemo = await getRow('SELECT * FROM demos WHERE id = ?', [req.params.id]);
+    res.json({ code: 200, message: 'Tags updated successfully', data: mapDemoRow(updatedDemo) });
+  } catch (error) {
+    console.error('Error updating tags:', error);
     res.status(500).json({ code: 500, message: 'Server error', data: null });
   }
 });
@@ -558,7 +608,7 @@ const uploadMultiple = upload.fields([
 
 // POST /demos/upload-zip - 上传ZIP项目
 router.post('/upload-zip', uploadMultiple, async (req, res) => {
-  const { title, description, categoryId, layer, communityId, config } = req.body;
+  const { title, description, categoryId, layer, communityId, config, tags, bountyId } = req.body;
   const user = await getCurrentUser(req);
   
   if (!user) {
@@ -605,12 +655,13 @@ router.post('/upload-zip', uploadMultiple, async (req, res) => {
     }
     
     const configJson = config ? JSON.stringify(config) : null;
+    const tagsJson = tags ? JSON.stringify(tags) : null;
     const hasOriginal = req.files.originalZip && req.files.originalZip.length > 0;
     
     await runQuery(`
       INSERT INTO demos (id, title, description, category_id, layer, community_id, 
-                       code, original_code, config, author, creator_id, status, project_type, entry_file, project_size, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       code, original_code, config, tags, author, creator_id, status, project_type, entry_file, project_size, created_at, bounty_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       demoId,
       title,
@@ -621,13 +672,15 @@ router.post('/upload-zip', uploadMultiple, async (req, res) => {
       projectInfo.entryFiles[0],
       hasOriginal ? 'has_original_files' : null,
       configJson,
+      tagsJson,
       user.username,
       user.id,
       'pending',
       'multi-file',
       projectInfo.entryFiles[0],
       projectInfo.totalSize,
-      Date.now()
+      Date.now(),
+      bountyId || null
     ]);
     
     fs.unlinkSync(req.files.zipFile[0].path);

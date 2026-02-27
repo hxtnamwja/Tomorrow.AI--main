@@ -35,7 +35,10 @@ router.post('/login', async (req, res) => {
           banReason: user.ban_reason,
           contactInfo: user.contact_info,
           paymentQr: user.payment_qr,
-          bio: user.bio
+          bio: user.bio,
+          contributionPoints: user.contribution_points || 0,
+          points: user.points || 0,
+          communityPoints: user.community_points || 0
         }
       }
     });
@@ -60,10 +63,10 @@ router.post('/register', async (req, res) => {
     }
 
     const id = 'user-' + Date.now();
-    await runQuery('INSERT INTO users (id, username, role, created_at, password, is_banned) VALUES (?, ?, ?, ?, ?, ?)', 
-      [id, username, 'user', Date.now(), password, 0]);
+    await runQuery('INSERT INTO users (id, username, role, created_at, password, is_banned, community_points, points, contribution_points) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', 
+      [id, username, 'user', Date.now(), password, 0, 100, 0, 0]);
     
-    const user = { id, username, role: 'user', isBanned: 0 };
+    const user = { id, username, role: 'user', isBanned: 0, communityPoints: 100, points: 0, contributionPoints: 0 };
     const token = Buffer.from(JSON.stringify({ userId: user.id, role: user.role })).toString('base64');
 
     res.json({
@@ -88,7 +91,7 @@ router.get('/me', async (req, res) => {
   try {
     const token = authHeader.replace('Bearer ', '');
     const payload = JSON.parse(Buffer.from(token, 'base64').toString());
-    const user = await getRow('SELECT id, username, role, is_banned, contact_info, payment_qr, bio FROM users WHERE id = ?', [payload.userId]);
+    const user = await getRow('SELECT * FROM users WHERE id = ?', [payload.userId]);
     
     if (!user) {
       return res.status(404).json({ code: 404, message: 'User not found', data: null });
@@ -104,7 +107,10 @@ router.get('/me', async (req, res) => {
         isBanned: user.is_banned,
         contactInfo: user.contact_info,
         paymentQr: user.payment_qr,
-        bio: user.bio
+        bio: user.bio,
+        contributionPoints: user.contribution_points || 0,
+        points: user.points || 0,
+        communityPoints: user.community_points || 0
       }
     });
   } catch (error) {

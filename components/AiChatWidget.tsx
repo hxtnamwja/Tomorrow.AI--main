@@ -3,16 +3,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, X, ChevronRight, Trash2 } from 'lucide-react';
 import { AiService } from '../services/aiService';
 import { AIMessageContent } from './AIMessageContent';
+import { Demo, Language } from '../types';
+import { COMMON_TAGS, getTagName } from '../constants';
 
 interface AiChatWidgetProps {
   t: (key: any) => string;
-  language: string;
+  language: Language;
   onOpenDemo?: (demoId: string) => void;
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
+  demos: Demo[];
 }
 
-export const AiChatWidget: React.FC<AiChatWidgetProps> = ({ t, language, onOpenDemo, isOpen, setIsOpen }) => {
+export const AiChatWidget: React.FC<AiChatWidgetProps> = ({ t, language, onOpenDemo, isOpen, setIsOpen, demos }) => {
   const [messages, setMessages] = useState<{role: 'user'|'model', text: string}[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -52,6 +55,37 @@ export const AiChatWidget: React.FC<AiChatWidgetProps> = ({ t, language, onOpenD
     if (!input.trim()) return;
     const userMsg = input;
     
+    // 构建demos的context信息
+    const demosContext = demos.map(demo => {
+      const tagNames = (demo.tags || []).map(tagId => getTagName(tagId, language)).join(', ');
+      return `ID: ${demo.id}
+标题: ${demo.title}
+简介: ${demo.description || ''}
+标签: ${tagNames || '无'}
+分类: ${(() => {
+  const CATEGORY_ID_TO_SUBJECT = {
+    'cat-physics': 'Physics',
+    'cat-chemistry': 'Chemistry',
+    'cat-mathematics': 'Mathematics',
+    'cat-biology': 'Biology',
+    'cat-computer-science': 'Computer Science',
+    'cat-astronomy': 'Astronomy',
+    'cat-earth-science': 'Earth Science',
+    'cat-creative-tools': 'Creative Tools'
+  };
+  return CATEGORY_ID_TO_SUBJECT[demo.categoryId] || demo.categoryId || '';
+})()}
+作者: ${demo.author || ''}`;
+    }).join('\n\n---\n\n');
+    
+    const fullContext = `【可用的演示程序列表】
+${demosContext}
+
+【重要】
+请根据用户的查询，从上面的演示程序中推荐合适的程序。
+你可以参考程序的标题、简介和标签来判断。
+推荐时使用格式：<a href="#/demo/DEMO_ID" class="text-indigo-600 hover:underline" onclick="window.parent.postMessage({type: 'openDemo', demoId: 'DEMO_ID'}, '*')">演示程序标题</a>`;
+    
     // Add user message
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
     setInput('');
@@ -63,7 +97,7 @@ export const AiChatWidget: React.FC<AiChatWidgetProps> = ({ t, language, onOpenD
     let accumulatedText = '';
 
     try {
-      await AiService.recommend(userMsg, undefined, (chunk) => {
+      await AiService.recommend(userMsg, fullContext, (chunk) => {
         accumulatedText += chunk;
         setMessages(prev => {
           const newMessages = [...prev];

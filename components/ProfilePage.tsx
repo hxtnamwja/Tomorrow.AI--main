@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserRole, User as UserType, Community, Demo, Feedback, Language } from '../types';
-import { UserCircle, ShieldCheck, Edit3, Save, X, Mail, QrCode, BookOpen, Building2, Heart, Image as ImageIcon, MessageSquare, Archive, RotateCcw, Trash2, Star, Trophy, Award, ChevronRight, BookMarked, FlaskConical, Beaker, ShoppingBag, Sparkles, Crown, Atom, Compass, Cat, Rabbit, Gem, Gift, Lightbulb, Flame, Wand2, Monitor, Gamepad2, Zap, Ghost } from 'lucide-react';
+import { UserCircle, ShieldCheck, Edit3, Save, X, Mail, QrCode, BookOpen, Building2, Heart, Image as ImageIcon, MessageSquare, Archive, RotateCcw, Trash2, Star, Trophy, Award, ChevronRight, BookMarked, FlaskConical, Beaker, ShoppingBag, Sparkles, Crown, Atom, Compass, Cat, Rabbit, Gem, Gift, Lightbulb, Flame, Wand2, Monitor, Gamepad2, Zap, Ghost, HelpCircle } from 'lucide-react';
 import { StorageService } from '../services/storageService';
 import { FeedbackAPI, DemosAPI } from '../services/apiService';
 import FeedbackList from './FeedbackList';
@@ -75,6 +75,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   });
   const [saving, setSaving] = useState(false);
   const [showPaymentQrUpload, setShowPaymentQrUpload] = useState(false);
+  const [showPointsInfo, setShowPointsInfo] = useState(false);
 
   const isOwnProfile = userId === currentUserId;
 
@@ -144,7 +145,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   };
 
   const handleRestoreDemo = async (demoId: string) => {
-    if (!confirm('确定要恢复这个程序吗？')) {
+    if (!confirm(t('confirmRestoreDemo'))) {
       return;
     }
     try {
@@ -153,12 +154,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       loadData();
     } catch (error) {
       console.error('Failed to restore demo:', error);
-      alert('恢复失败');
+      alert(t('restoreFailed'));
     }
   };
 
   const handleDeletePermanently = async (demoId: string) => {
-    if (!confirm('确定要永久删除这个程序吗？此操作不可撤销！')) {
+    if (!confirm(t('confirmPermanentlyDeleteDemo'))) {
       return;
     }
     try {
@@ -166,12 +167,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       setArchivedDemos(prev => prev.filter(d => d.id !== demoId));
     } catch (error) {
       console.error('Failed to delete demo permanently:', error);
-      alert('永久删除失败');
+      alert(t('permanentlyDeleteFailed'));
     }
   };
 
   const handleDeleteDemo = async (demoId: string) => {
-    if (!confirm('确定要删除这个程序吗？它将被移到留档区。')) {
+    if (!confirm(t('confirmDeleteDemoToArchive'))) {
       return;
     }
     try {
@@ -179,7 +180,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       loadData();
     } catch (error) {
       console.error('Failed to delete demo:', error);
-      alert('删除失败');
+      alert(t('deleteFailed'));
     }
   };
 
@@ -250,7 +251,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           className="flex items-center gap-2 text-slate-600 hover:text-slate-800 transition-colors"
         >
           <X className="w-4 h-4" />
-          Back
+          {t('back')}
         </button>
       </div>
 
@@ -1598,7 +1599,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 className="mt-14 flex items-center gap-2 px-4 py-2 bg-white shadow-lg rounded-xl text-slate-700 hover:bg-slate-50 transition-colors font-medium"
               >
                 {isEditing ? <X className="w-4 h-4" /> : <Edit3 className="w-4 h-4" />}
-                {isEditing ? 'Cancel' : 'Edit Profile'}
+                {isEditing ? t('cancel') : t('editProfile')}
               </button>
             )}
           </div>
@@ -1606,7 +1607,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           {isEditing && isOwnProfile ? (
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Username</label>
+                <label className="block text-xs font-bold text-slate-600 uppercase mb-1">{t('username')}</label>
                 <input
                   type="text"
                   value={editForm.username}
@@ -1617,7 +1618,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1">New Password (Optional)</label>
+                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1">{t('newPasswordOptional')}</label>
                   <input
                     type="password"
                     value={editForm.password}
@@ -1627,7 +1628,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Confirm Password</label>
+                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1">{t('confirmPassword')}</label>
                   <input
                     type="password"
                     value={editForm.confirmPassword}
@@ -1641,13 +1642,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase mb-1 flex items-center gap-2">
                   <Mail className="w-3.5 h-3.5" />
-                  Contact Info (Optional)
+                  {t('contactInfoOptional')}
                 </label>
                 <input
                   type="text"
                   value={editForm.contactInfo}
                   onChange={(e) => setEditForm(prev => ({ ...prev, contactInfo: e.target.value }))}
-                  placeholder="Email, WeChat, etc."
+                  placeholder={t('emailWeChatEtc')}
                   className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
                 />
               </div>
@@ -1655,12 +1656,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase mb-1 flex items-center gap-2">
                   <BookOpen className="w-3.5 h-3.5" />
-                  Bio (Optional)
+                  {t('bioOptional')}
                 </label>
                 <textarea
                   value={editForm.bio}
                   onChange={(e) => setEditForm(prev => ({ ...prev, bio: e.target.value }))}
-                  placeholder="Tell us about yourself..."
+                  placeholder={t('tellUsAboutYourself')}
                   rows={3}
                   className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all resize-none"
                 />
@@ -1669,7 +1670,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase mb-1 flex items-center gap-2">
                   <QrCode className="w-3.5 h-3.5" />
-                  Payment QR Code (Optional)
+                  {t('paymentQrCodeOptional')}
                 </label>
                 {editForm.paymentQr ? (
                   <div className="flex items-start gap-4">
@@ -1678,7 +1679,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       onClick={() => setEditForm(prev => ({ ...prev, paymentQr: '' }))}
                       className="px-3 py-1.5 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg text-sm font-medium transition-colors"
                     >
-                      Remove
+                      {t('remove')}
                     </button>
                   </div>
                 ) : (
@@ -1695,7 +1696,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       className="flex items-center gap-2 px-4 py-3 bg-slate-50 border border-dashed border-slate-300 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors"
                     >
                       <ImageIcon className="w-5 h-5 text-slate-400" />
-                      <span className="text-slate-500">Click to upload payment QR code</span>
+                      <span className="text-slate-500">{t('clickToUploadPaymentQrCode')}</span>
                     </label>
                   </div>
                 )}
@@ -1718,7 +1719,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   }}
                   className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl font-medium transition-colors"
                 >
-                  Cancel
+                  {t('cancel')}
                 </button>
                 <button
                   onClick={handleSave}
@@ -1730,7 +1731,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   ) : (
                     <Save className="w-4 h-4" />
                   )}
-                  Save Changes
+                  {t('saveChanges')}
                 </button>
               </div>
             </div>
@@ -2374,16 +2375,16 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   <div>
                     <h3 className="text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
                       <BookOpen className="w-4 h-4" />
-                      Bio
+                      {t('bio')}
                     </h3>
-                    <p className="text-slate-600">{user?.bio || <span className="text-slate-400 italic">Not provided</span>}</p>
+                    <p className="text-slate-600">{user?.bio || <span className="text-slate-400 italic">{t('notProvided')}</span>}</p>
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
                       <Mail className="w-4 h-4" />
-                      Contact Info
+                      {t('contactInfo')}
                     </h3>
-                    <p className="text-slate-600">{user?.contactInfo || <span className="text-slate-400 italic">Not provided</span>}</p>
+                    <p className="text-slate-600">{user?.contactInfo || <span className="text-slate-400 italic">{t('notProvided')}</span>}</p>
                   </div>
                 </div>
               </div>
@@ -2394,10 +2395,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     <div>
                       <h3 className="font-bold text-red-800 flex items-center gap-2 mb-1">
                         <MessageSquare className="w-5 h-5" />
-                        账号已封禁
+                        {t('accountBanned')}
                       </h3>
                       {banReason && (
-                        <p className="text-red-700 text-sm">封禁原因：{banReason}</p>
+                        <p className="text-red-700 text-sm">{t('banReason')}：{banReason}</p>
                       )}
                     </div>
                     {onOpenBanAppeal && (
@@ -2405,7 +2406,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                         onClick={onOpenBanAppeal}
                         className="px-4 py-2 bg-white border border-red-300 text-red-700 font-bold rounded-lg hover:bg-red-100 transition-colors text-sm"
                       >
-                        提交申诉
+                        {t('submitAppeal')}
                       </button>
                     )}
                   </div>
@@ -2415,23 +2416,23 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               <div className="flex flex-wrap items-center gap-6 pt-2">
                 <div className="flex items-center gap-2 text-slate-600">
                   <Building2 className="w-4 h-4" />
-                  <span>{stats?.communitiesCount || 0} Communities Managed</span>
+                  <span>{stats?.communitiesCount || 0} {t('communitiesManaged')}</span>
                 </div>
                 <div className="flex items-center gap-2 text-slate-600">
                   <BookOpen className="w-4 h-4" />
-                  <span>{stats?.demosCount || 0} Works Published</span>
+                  <span>{stats?.demosCount || 0} {t('worksPublished')}</span>
                 </div>
               </div>
 
               <div className="pt-2">
                 <h3 className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
                   <Heart className="w-4 h-4 text-red-500" />
-                  Support Me
+                  {t('supportMe')}
                 </h3>
                 {user?.paymentQr ? (
                   <img src={user.paymentQr} alt="Payment QR" className="w-40 h-40 object-cover rounded-xl border border-slate-200" />
                 ) : (
-                  <p className="text-slate-400 italic">No payment QR code provided</p>
+                  <p className="text-slate-400 italic">{t('noPaymentQrCodeProvided')}</p>
                 )}
               </div>
 
@@ -2449,10 +2450,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     </div>
                     <div className="text-left">
                       <p className="font-bold text-slate-100 group-hover:text-white transition-colors duration-300 text-lg">
-                        {lang === 'cn' ? '探索商城' : 'Explore Shop'}
+                        {t('exploreShop')}
                       </p>
                       <p className="text-xs text-slate-400 group-hover:text-slate-200 transition-colors duration-300">
-                        {lang === 'cn' ? '用积分解锁专属定制' : 'Unlock exclusive customizations with points'}
+                        {t('unlockExclusiveCustomizations')}
                       </p>
                     </div>
                     <div className="ml-auto flex items-center gap-2">
@@ -2473,6 +2474,19 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               {/* Level, Points & Contribution Section */}
               {user && (
                 <div className="mt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                      <Award className="w-4 h-4" />
+                      {t('pointsAndContribution')}
+                    </h3>
+                    <button
+                      onClick={() => setShowPointsInfo(true)}
+                      className="p-2 hover:bg-slate-100 rounded-lg transition-colors group"
+                    >
+                      <HelpCircle className="w-5 h-5 text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                    </button>
+                  </div>
+                  
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     {/* Contribution Points Card */}
                     <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-xl border border-indigo-100">
@@ -2706,7 +2720,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                                 </span>
                                 {isUnlocked && (
                                   <span className="ml-auto text-xs text-emerald-600 font-bold">
-                                    ✓ 已解锁
+                                    {t('unlocked')}
                                   </span>
                                 )}
                               </div>
@@ -2715,7 +2729,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                                   <li key={i} className="flex items-center gap-1">
                                     <span className="text-slate-400">•</span>
                                     {item}
-                                    {item.includes('积分') && privileges.bonusPoints > 0 && (
+                                    {item.includes(t('points')) && privileges.bonusPoints > 0 && (
                                       <span className="text-emerald-600 font-medium ml-1">
                                         (+{privileges.bonusPoints})
                                       </span>
@@ -2744,7 +2758,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       <div className="mt-6">
                         <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
                           <Crown className="w-4 h-4" />
-                          专属功能
+                          {t('exclusiveFeatures')}
                         </h3>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           {hasBorder && user.avatarBorder && (
@@ -2753,7 +2767,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                                 <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #fbbf24, #f59e0b)' }}>
                                   <Sparkles className="w-4 h-4 text-white" />
                                 </div>
-                                <span className="text-sm font-semibold text-slate-700">头像边框</span>
+                                <span className="text-sm font-semibold text-slate-700">{t('avatarBorder')}</span>
                               </div>
                               <div className="flex justify-center">
                                 <div className="relative">
@@ -2779,10 +2793,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                                 <div className="w-8 h-8 rounded-full flex items-center justify-center bg-amber-500">
                                   <Trophy className="w-4 h-4 text-white" />
                                 </div>
-                                <span className="text-sm font-semibold text-amber-800">专属徽章</span>
+                                <span className="text-sm font-semibold text-amber-800">{t('exclusiveBadge')}</span>
                               </div>
                               <div className="text-xs text-amber-700">
-                                您的等级徽章将在展示程序时突出显示
+                                {t('yourLevelBadgeWillBeHighlighted')}
                               </div>
                             </div>
                           )}
@@ -2792,10 +2806,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                                 <div className="w-8 h-8 rounded-full flex items-center justify-center bg-purple-500">
                                   <Star className="w-4 h-4 text-white" />
                                 </div>
-                                <span className="text-sm font-semibold text-purple-800">贡献者墙</span>
+                                <span className="text-sm font-semibold text-purple-800">{t('contributorWall')}</span>
                               </div>
                               <div className="text-xs text-purple-700">
-                                您的名字已登上贡献者墙！
+                                {t('yourNameIsOnTheContributorWall')}
                               </div>
                             </div>
                           )}
@@ -2941,13 +2955,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               
               const handleRemoveFavorite = async (e: React.MouseEvent) => {
                 e.stopPropagation();
-                if (!confirm('确定要从收藏夹中移除这个演示吗？')) return;
+                if (!confirm(t('confirmRemoveFromFavorites'))) return;
                 try {
                   await StorageService.removeFavorite(userId, demo.id);
                   loadData();
                 } catch (error) {
                   console.error('Failed to remove favorite:', error);
-                  alert('移除收藏失败');
+                  alert(t('removeFromFavoritesFailed'));
                 }
               };
               
@@ -2979,7 +2993,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                       className="px-3 py-1.5 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
                     >
                       <X className="w-3.5 h-3.5" />
-                      移除
+                      {t('remove')}
                     </button>
                   </div>
                 </div>
@@ -3062,6 +3076,96 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       )}
 
 
+      {/* Points & Contribution Info Modal */}
+      {showPointsInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-white">
+                    {t('pointsAndContributionGuide')}
+                  </h3>
+                  <p className="text-indigo-100 mt-1 text-sm">
+                    {t('completelyNonProfit')}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowPointsInfo(false)}
+                  className="p-2 hover:bg-white/20 rounded-full transition-colors"
+                >
+                  <X className="w-6 h-6 text-white" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              {/* Contribution Points */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                    <Award className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-800">
+                      {t('contributionPoints')}
+                    </h4>
+                    <p className="text-sm text-slate-500">
+                      {t('forLevelingUpAndUnlockingPrivileges')}
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                  <p className="text-sm text-slate-700">
+                    <span className="font-bold text-indigo-600">+10</span> {t('uploadAnApprovedDemoProgram')}
+                  </p>
+                </div>
+              </div>
+              
+              {/* Points */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
+                    <Star className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-800">
+                      {t('points')}
+                    </h4>
+                    <p className="text-sm text-slate-500">
+                      {t('forRedeemingItemsInThePointsShop')}
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 space-y-2">
+                  <p className="text-sm text-slate-700">
+                    <span className="font-bold text-emerald-600">+10</span> {t('uploadAnApprovedDemoProgram')}
+                  </p>
+                  <p className="text-sm text-slate-700">
+                    <span className="font-bold text-emerald-600">{t('rewardTasks')}</span>
+                  </p>
+                </div>
+              </div>
+              
+              {/* Note */}
+              <div className="bg-amber-50 rounded-xl p-4 border border-amber-100">
+                <p className="text-sm text-amber-700">
+                  {t('platformIsCompletelyNonProfit')}
+                </p>
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-slate-100 bg-slate-50">
+              <button
+                onClick={() => setShowPointsInfo(false)}
+                className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl hover:opacity-90 transition-opacity"
+              >
+                {t('gotIt')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

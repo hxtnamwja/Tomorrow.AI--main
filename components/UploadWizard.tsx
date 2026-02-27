@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Target, Globe, Users, Check, Upload, FileCode, Play, Image, X, FolderOpen, FileText, Sparkles, CheckCircle2, Database, Users2, RefreshCw, Zap, Bot } from 'lucide-react';
 import { Demo, Category, Subject, Bounty, Layer, Community } from '../types';
 import { AiService, GeneratedProject } from '../services/aiService';
+import { TagSelector } from './TagSelector';
 
 interface ProjectFile {
   type: 'file' | 'directory';
@@ -28,7 +29,7 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, role, 
   onCancel: () => void,
   bountyContext: Bounty | null
 }) => {
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(bountyContext ? 2 : 0);
   const [isPlayground, setIsPlayground] = useState(false);
   const [editorMode, setEditorMode] = useState('upload' as 'upload' | 'paste');
   const [projectMode, setProjectMode] = useState('single' as 'single' | 'multi');
@@ -38,14 +39,15 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, role, 
   const [previewContent, setPreviewContent] = useState('');
   const [entryFile, setEntryFile] = useState('');
   const [formData, setFormData] = useState({
-    title: '',
-    description: '',
+    title: bountyContext?.programTitle || '',
+    description: bountyContext?.programDescription || '',
     author: '',
-    categoryId: '',
-    layer: (bountyContext ? bountyContext.layer : 'general') as Layer,
-    communityId: bountyContext?.communityId || undefined,
+    categoryId: bountyContext?.publishCategoryId || '',
+    layer: (bountyContext ? bountyContext.publishLayer : 'general') as Layer,
+    communityId: bountyContext?.publishCommunityId || undefined,
     code: '',
-    thumbnailUrl: ''
+    thumbnailUrl: '',
+    tags: bountyContext?.programTags || [] as string[]
   });
   const [thumbnailPreview, setThumbnailPreview] = useState(null as string | null);
 
@@ -65,9 +67,26 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, role, 
   const [allOriginalFiles, setAllOriginalFiles] = useState([] as { path: string; content: string }[]);
   const [allOriginalFilesRaw, setAllOriginalFilesRaw] = useState<Map<string, { type: 'text' | 'binary', content: string | Blob }>>(new Map());
 
+  useEffect(() => {
+    if (bountyContext) {
+      setStep(2);
+      setFormData({
+        title: bountyContext.programTitle || '',
+        description: bountyContext.programDescription || '',
+        author: '',
+        categoryId: bountyContext.publishCategoryId || '',
+        layer: (bountyContext.publishLayer || 'general') as Layer,
+        communityId: bountyContext.publishCommunityId || undefined,
+        code: '',
+        thumbnailUrl: '',
+        tags: bountyContext.programTags || [] as string[]
+      });
+    }
+  }, [bountyContext]);
+
   const availableCategories = React.useMemo(() => {
     if (formData.layer === 'general') {
-      return Object.values(Subject).map(s => ({ id: s, name: s }));
+      return categories.filter(c => !c.communityId && !c.parentId).map(c => ({ id: c.id, name: c.name }));
     } else if (formData.layer === 'community' && formData.communityId) {
       return categories.filter(c => c.communityId === formData.communityId).map(c => ({ id: c.id, name: c.name }));
     }
@@ -376,6 +395,9 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, role, 
         if (formData.communityId) {
           formDataToSend.append('communityId', formData.communityId);
         }
+        if (bountyContext) {
+          formDataToSend.append('bountyId', bountyContext.id);
+        }
         if (originalZipFile) {
           formDataToSend.append('originalZip', originalZipFile);
           console.log('Adding originalZip:', originalZipFile.name, originalZipFile.size);
@@ -410,7 +432,8 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, role, 
             bountyId: bountyContext?.id,
             projectType: 'multi-file',
             entryFile: result.data.entryFile,
-            projectSize: result.data.size
+            projectSize: result.data.size,
+            tags: formData.tags
           });
         } else {
           alert(`上传失败: ${result.message || '未知错误'}`);
@@ -427,6 +450,9 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, role, 
       formDataToSend.append('layer', formData.layer);
       if (formData.communityId) {
         formDataToSend.append('communityId', formData.communityId);
+      }
+      if (bountyContext) {
+        formDataToSend.append('bountyId', bountyContext.id);
       }
       if (originalZipFile) {
         formDataToSend.append('originalZip', originalZipFile);
@@ -460,7 +486,8 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, role, 
             bountyId: bountyContext?.id,
             projectType: 'multi-file',
             entryFile: result.data.entryFile,
-            projectSize: result.data.size
+            projectSize: result.data.size,
+            tags: formData.tags
           });
         } else {
           alert(`上传失败: ${result.message || '未知错误'}`);
@@ -485,23 +512,15 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, role, 
         status: 'pending',
         createdAt: Date.now(),
         bountyId: bountyContext?.id,
-        projectType: 'single-file'
+        projectType: 'single-file',
+        tags: formData.tags
       };
       console.log('Demo to submit:', { codeLength: newDemo.code?.length, originalCodeLength: newDemo.originalCode?.length });
       onSubmit(newDemo);
     }
   };
   
-  React.useEffect(() => {
-      if(bountyContext) {
-          setStep(1);
-          setFormData(prev => ({
-              ...prev,
-              layer: bountyContext.layer,
-              communityId: bountyContext.communityId
-          }));
-      }
-  }, [bountyContext]);
+
 
   const myCommunities = communities.filter(c => c.members.includes(currentUserId) && c.status === 'approved');
 
@@ -518,7 +537,9 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, role, 
            )}
          </div>
          <div className="flex gap-2">
-            {[0, 1, 2, 3].map(s => (
+            {bountyContext ? [0, 1].map(s => (
+              <div key={s} className={`w-2.5 h-2.5 rounded-full ${step >= (s === 0 ? 2 : 3) ? 'bg-indigo-600' : 'bg-slate-300'}`} />
+            )) : [0, 1, 2, 3].map(s => (
               <div key={s} className={`w-2.5 h-2.5 rounded-full ${step >= s ? 'bg-indigo-600' : 'bg-slate-300'}`} />
             ))}
          </div>
@@ -636,6 +657,15 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, role, 
                  onChange={e => setFormData({...formData, description: e.target.value})}
                  rows={4}
                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+               />
+             </div>
+
+             <div>
+               <label className="block text-sm font-medium text-slate-700 mb-1">选择标签</label>
+               <TagSelector
+                 selectedTags={formData.tags}
+                 onChange={(tags) => setFormData({...formData, tags})}
+                 lang={t('lang') || 'cn'}
                />
              </div>
            </div>
@@ -1229,13 +1259,20 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, role, 
        <div className="px-8 py-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
          <button 
            onClick={() => {
-             if (step === 0) onCancel();
+             if (bountyContext && step === 2) onCancel();
+             else if (step === 0) onCancel();
              else if (step === 2 && isPlayground) { setIsPlayground(false); setStep(0); }
-             else setStep(s => s - 1);
+             else if (bountyContext) {
+               if (step === 3) setStep(2);
+             } else {
+               setStep(s => s - 1);
+             }
            }}
            className="px-6 py-2 text-slate-600 font-medium hover:bg-slate-200 rounded-lg transition-colors"
          >
-           {step === 0 ? t('cancel') : t('back')}
+           {bountyContext && step === 2 ? t('cancel') : 
+            bountyContext && step === 3 ? t('back') :
+            step === 0 ? t('cancel') : t('back')}
          </button>
          
          <div className="flex gap-2">
@@ -1250,10 +1287,13 @@ export const UploadWizard = ({ t, categories, communities, currentUserId, role, 
 
             {(!isPlayground || step !== 3) && (
                 <button 
-                onClick={() => step === 3 ? handleSubmit() : setStep(s => s + 1)}
+                onClick={() => step === 3 ? handleSubmit() : (bountyContext ? setStep(3) : setStep(s => s + 1))}
                 disabled={
-                    (step === 0 && formData.layer === 'community' && !formData.communityId) ||
-                    (step === 1 && (!formData.title || !formData.categoryId))
+                    (bountyContext ? 
+                      (step === 2 && (!formData.code || formData.code.trim().length === 0) && !zipFile) :
+                      (step === 0 && formData.layer === 'community' && !formData.communityId) ||
+                      (step === 1 && (!formData.title || !formData.categoryId)) ||
+                      (step === 2 && (!formData.code || formData.code.trim().length === 0) && !zipFile))
                 }
                 className="px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >

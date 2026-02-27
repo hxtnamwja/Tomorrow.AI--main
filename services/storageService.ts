@@ -1,11 +1,12 @@
-import { Demo, Category, Bounty, Community, User, UserStats } from '../types';
+import { Demo, Category, Bounty, Community, User, UserStats, Announcement } from '../types';
 import { 
   DemosAPI, 
   CommunitiesAPI, 
   CategoriesAPI, 
   BountiesAPI,
   AuthAPI,
-  UsersAPI 
+  UsersAPI,
+  AnnouncementsAPI
 } from './apiService';
 
 // Seed data for initial setup
@@ -89,9 +90,11 @@ const SEED_BOUNTIES: Bounty[] = [
     title: 'Viscous Fluid Simulation',
     description: 'We need a high-performance visual of fluid dynamics with adjustable viscosity parameters.',
     reward: '$200 Grant',
+    rewardPoints: 200,
     layer: 'general',
     status: 'open',
     creator: 'Admin',
+    creatorId: 'admin-001',
     createdAt: Date.now()
   }
 ];
@@ -100,6 +103,23 @@ const SEED_BOUNTIES: Bounty[] = [
 const generateCommunityCode = () => {
   return Math.random().toString().slice(2, 14);
 };
+
+// In-memory storage for announcements (for demo)
+let announcementsStore: Announcement[] = [
+  {
+    id: 'ann-1',
+    title: 'Welcome to Tomorrow!',
+    content: 'Welcome to Tomorrow! We are excited to have you here. Explore our demos, join communities, and participate in bounties!',
+    type: 'general',
+    layer: 'general',
+    createdBy: 'seed-admin',
+    createdByUsername: 'Admin',
+    createdAt: Date.now(),
+    isActive: true,
+  }
+];
+
+let nextAnnouncementId = 2;
 
 export const StorageService = {
   // Initialize - check API connection
@@ -257,7 +277,7 @@ export const StorageService = {
   },
 
   saveDemo: async (demo: Demo) => {
-    await DemosAPI.create(demo);
+    return await DemosAPI.create(demo);
   },
 
   updateDemoStatus: async (id: string, status: string, rejectionReason?: string) => {
@@ -323,18 +343,36 @@ export const StorageService = {
   },
 
   saveBounty: async (bounty: Bounty) => {
-    await BountiesAPI.create(bounty);
-  },
- 
-  addBounty: async (bounty: Bounty | Omit<Bounty, 'id' | 'createdAt'>) => {
     await BountiesAPI.create({
       title: bounty.title,
       description: bounty.description,
       reward: bounty.reward,
+      rewardPoints: bounty.rewardPoints,
       layer: bounty.layer,
       communityId: bounty.communityId,
-      status: 'open',
-      creator: bounty.creator
+      publishLayer: bounty.publishLayer,
+      publishCommunityId: bounty.publishCommunityId,
+      publishCategoryId: bounty.publishCategoryId
+    });
+  },
+ 
+  addBounty: async (bounty: Bounty | Omit<Bounty, 'id' | 'createdAt'>) => {
+    let rewardPoints: number;
+    if ('rewardPoints' in bounty) {
+      rewardPoints = bounty.rewardPoints;
+    } else {
+      rewardPoints = parseInt((bounty as any).reward) || 0;
+    }
+    await BountiesAPI.create({
+      title: bounty.title,
+      description: bounty.description,
+      reward: bounty.reward,
+      rewardPoints,
+      layer: bounty.layer,
+      communityId: bounty.communityId,
+      publishLayer: bounty.publishLayer,
+      publishCommunityId: bounty.publishCommunityId,
+      publishCategoryId: bounty.publishCategoryId
     });
   },
 
@@ -454,6 +492,97 @@ export const StorageService = {
       return await UsersAPI.getDemos(id);
     } catch (error) {
       console.error('Error fetching user demos:', error);
+      return [];
+    }
+  },
+
+  // --- Announcements ---
+  getAnnouncements: async (params?: { 
+    layer?: string;
+    communityId?: string;
+  }): Promise<Announcement[]> => {
+    try {
+      return await AnnouncementsAPI.getAll(params);
+    } catch (error) {
+      console.error('Error fetching announcements:', error);
+      return [];
+    }
+  },
+
+  getAllAnnouncementsAdmin: async (): Promise<Announcement[]> => {
+    try {
+      return await AnnouncementsAPI.getAllAdmin();
+    } catch (error) {
+      console.error('Error fetching all announcements:', error);
+      return [];
+    }
+  },
+
+  createAnnouncement: async (announcement: Omit<Announcement, 'id' | 'createdAt'>): Promise<Announcement> => {
+    try {
+      return await AnnouncementsAPI.create(announcement);
+    } catch (error) {
+      console.error('Error creating announcement:', error);
+      throw error;
+    }
+  },
+
+  toggleAnnouncementActive: async (id: string, isActive: boolean): Promise<Announcement> => {
+    try {
+      return await AnnouncementsAPI.toggleActive(id, isActive);
+    } catch (error) {
+      console.error('Error toggling announcement active:', error);
+      throw error;
+    }
+  },
+
+  deleteAnnouncement: async (id: string): Promise<void> => {
+    try {
+      await AnnouncementsAPI.delete(id);
+    } catch (error) {
+      console.error('Error deleting announcement:', error);
+      throw error;
+    }
+  },
+
+  // --- Demo Tags ---
+  updateDemoTags: async (demoId: string, tags: string[]): Promise<Demo> => {
+    // This would call API in real implementation
+    const demos = await DemosAPI.getAll({});
+    const demo = demos.find(d => d.id === demoId);
+    if (demo) {
+      demo.tags = tags;
+    }
+    return demo as Demo;
+  },
+
+  // --- Search with tags ---
+  searchDemos: async (query: string, params?: { 
+    layer?: string;
+    communityId?: string;
+    tags?: string[];
+  }): Promise<Demo[]> => {
+    try {
+      const demos = await DemosAPI.getAll({ 
+        layer: params?.layer, 
+        communityId: params?.communityId,
+        status: 'published'
+      });
+      
+      const lowerQuery = query.toLowerCase();
+      return demos.filter(demo => {
+        const matchesQuery = !query || 
+          demo.title.toLowerCase().includes(lowerQuery) ||
+          demo.description.toLowerCase().includes(lowerQuery) ||
+          (demo.tags && demo.tags.some(tag => tag.toLowerCase().includes(lowerQuery)));
+        
+        const matchesTags = !params?.tags || params.tags.length === 0 ||
+          (demo.tags && params.tags.some(tag => demo.tags!.includes(tag)));
+        
+        return matchesQuery && matchesTags;
+      });
+    } catch (error) {
+      console.error('Error searching demos:', error);
       return [];
     }
   },

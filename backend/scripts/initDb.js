@@ -28,7 +28,8 @@ const createTables = async () => {
       contact_info TEXT,
       payment_qr TEXT,
       bio TEXT,
-      password TEXT
+      password TEXT,
+      community_points INTEGER DEFAULT 0
     )
   `);
 
@@ -91,6 +92,7 @@ const createTables = async () => {
       project_type TEXT DEFAULT 'single-file' CHECK(project_type IN ('single-file', 'multi-file')),
       entry_file TEXT,
       project_size INTEGER,
+      tags TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (community_id) REFERENCES communities(id) ON DELETE CASCADE
     )
@@ -103,12 +105,39 @@ const createTables = async () => {
       title TEXT NOT NULL,
       description TEXT NOT NULL,
       reward TEXT NOT NULL,
+      reward_points INTEGER NOT NULL DEFAULT 0,
       layer TEXT NOT NULL CHECK(layer IN ('general', 'community')),
       community_id TEXT,
-      status TEXT NOT NULL CHECK(status IN ('open', 'closed')),
+      status TEXT NOT NULL CHECK(status IN ('open', 'in_review', 'closed')),
       creator TEXT NOT NULL,
+      creator_id TEXT NOT NULL,
       created_at INTEGER NOT NULL,
+      accepted_solution_id TEXT,
+      accepted_user_id TEXT,
+      publish_layer TEXT,
+      publish_community_id TEXT,
+      publish_category_id TEXT,
+      program_title TEXT,
+      program_description TEXT,
+      program_tags TEXT,
       FOREIGN KEY (community_id) REFERENCES communities(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Bounty solutions table
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS bounty_solutions (
+      id TEXT PRIMARY KEY,
+      bounty_id TEXT NOT NULL,
+      demo_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      username TEXT NOT NULL,
+      submitted_at INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending', 'accepted', 'rejected')),
+      rejection_reason TEXT,
+      reviewed_at INTEGER,
+      FOREIGN KEY (bounty_id) REFERENCES bounties(id) ON DELETE CASCADE,
+      FOREIGN KEY (demo_id) REFERENCES demos(id) ON DELETE CASCADE
     )
   `);
 
@@ -178,6 +207,24 @@ const createTables = async () => {
     )
   `);
 
+  // Announcements table
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS announcements (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('general', 'community')),
+      layer TEXT NOT NULL CHECK(layer IN ('general', 'community')),
+      community_id TEXT,
+      created_by TEXT NOT NULL,
+      created_by_username TEXT,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER,
+      is_active INTEGER DEFAULT 1,
+      FOREIGN KEY (community_id) REFERENCES communities(id) ON DELETE CASCADE
+    )
+  `);
+
   console.log('Tables created successfully');
 };
 
@@ -189,10 +236,10 @@ const seedData = async () => {
 
   // Insert seed users
   try {
-    await runQuery('INSERT OR IGNORE INTO users (id, username, role, created_at, password) VALUES (?, ?, ?, ?, ?)', 
-      [adminId, 'admin', 'general_admin', now, '123456']);
-    await runQuery('INSERT OR IGNORE INTO users (id, username, role, created_at, password) VALUES (?, ?, ?, ?, ?)', 
-      [userId, 'researcher', 'user', now, '123456']);
+    await runQuery('INSERT OR IGNORE INTO users (id, username, role, created_at, password, community_points) VALUES (?, ?, ?, ?, ?, ?)', 
+      [adminId, 'admin', 'general_admin', now, '123456', 1000]);
+    await runQuery('INSERT OR IGNORE INTO users (id, username, role, created_at, password, community_points) VALUES (?, ?, ?, ?, ?, ?)', 
+      [userId, 'researcher', 'user', now, '123456', 500]);
     console.log('Seed users inserted');
   } catch (err) {
     console.log('Users already exist');
@@ -221,18 +268,22 @@ const seedData = async () => {
   // Insert seed bounty
   try {
     await runQuery(`
-      INSERT OR IGNORE INTO bounties (id, title, description, reward, layer, community_id, status, creator, created_at) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO bounties (id, title, description, reward, reward_points, layer, community_id, status, creator, creator_id, created_at, publish_layer, publish_category_id) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       'b-1',
       'Viscous Fluid Simulation',
       'We need a high-performance visual of fluid dynamics with adjustable viscosity parameters.',
-      '$200 Grant',
+      '200积分',
+      200,
       'general',
       null,
       'open',
       'Admin',
-      now
+      adminId,
+      now,
+      'general',
+      'cat-physics'
     ]);
     console.log('Seed bounty inserted');
   } catch (err) {}
@@ -314,6 +365,26 @@ const seedData = async () => {
       now
     ]);
     console.log('Seed demo inserted');
+  } catch (err) {}
+
+  // Insert seed announcement
+  try {
+    await runQuery(`
+      INSERT OR IGNORE INTO announcements (id, title, content, type, layer, community_id, created_by, created_by_username, created_at, is_active) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      'ann-1',
+      'Welcome to Tomorrow!',
+      'Welcome to Tomorrow! We are excited to have you here. Explore our demos, join communities, and participate in bounties!',
+      'general',
+      'general',
+      null,
+      adminId,
+      'Admin',
+      now,
+      1
+    ]);
+    console.log('Seed announcement inserted');
   } catch (err) {}
 };
 

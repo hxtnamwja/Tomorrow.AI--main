@@ -8,19 +8,17 @@ import {
   Target, Award, CheckCircle, Clock, Edit3, Save, Play, RefreshCw, Camera,
   LogOut, LayoutDashboard, Settings, User as UserIcon, KeyRound, Building2, Zap, Heart,
   HelpCircle, BookOpen, Menu, Send, MessageCircle, Repeat, MessageSquare, Moon, Sun,
-  Lock
+  Lock, Megaphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AiChatWidget } from './components/AiChatWidget';
 import { marked } from 'marked';
 
-import { Demo, Language, UserRole, Subject, Category, Layer, Bounty, Community, User, DemoPublication, Feedback } from './types';
+import { Demo, Language, UserRole, Subject, Category, Layer, Bounty, Community, User, DemoPublication, Feedback, Announcement } from './types';
 import { DICTIONARY, getTranslation, calculateLevel, hasExclusiveAvatarBorder, canCreateCommunityWithoutApproval, isLevelAtLeast } from './constants';
 import { StorageService } from './services/storageService';
 import { AiService } from './services/aiService';
-import { PublicationsAPI, FeedbackAPI, CommunitiesAPI } from './services/apiService';
-
-
+import { BountiesAPI, PublicationsAPI, FeedbackAPI, CommunitiesAPI, AuthAPI } from './services/apiService';
 
 
 
@@ -29,7 +27,8 @@ import { CategoryTreeNode } from './components/CategoryTreeNode';
 import { DemoPlayer } from './components/DemoPlayer';
 import { UploadWizard } from './components/UploadWizard';
 import { StatsCard } from './components/StatsCard';
-import { CreateBountyModal, CreateCategoryModal, PublishToCommunityModal, PublicationReviewPanel } from './components/Modals';
+import { CreateBountyModal as OldCreateBountyModal, CreateCategoryModal, PublishToCommunityModal, PublicationReviewPanel } from './components/Modals';
+import { CreateBountyModal, BountyDetailModal } from './components/BountyModals';
 import { CommunityAdminPanel } from './components/CommunityAdminPanel';
 import { UserManagementPanel } from './components/UserManagementPanel';
 import { ProfilePage } from './components/ProfilePage';
@@ -37,12 +36,27 @@ import FeedbackModal from './components/FeedbackModal';
 import FeedbackList from './components/FeedbackList';
 import { PointsShop } from './components/PointsShop';
 import { TeamPage } from './components/TeamPage';
+import { AnnouncementCard } from './components/AnnouncementCard';
+import { AnnouncementManager } from './components/AnnouncementManager';
+import { TagDisplay } from './components/TagDisplay';
 
 import { AuthPage } from './components/AuthPage';
 
 // --- Helpers ---
+const CATEGORY_ID_TO_SUBJECT: Record<string, string> = {
+  'cat-physics': Subject.Physics,
+  'cat-chemistry': Subject.Chemistry,
+  'cat-mathematics': Subject.Mathematics,
+  'cat-biology': Subject.Biology,
+  'cat-computer-science': Subject.ComputerScience,
+  'cat-astronomy': Subject.Astronomy,
+  'cat-earth-science': Subject.EarthScience,
+  'cat-creative-tools': Subject.CreativeTools
+};
+
 const SubjectIcon = ({ subject }: { subject: string }) => {
-  switch (subject) {
+  const actualSubject = CATEGORY_ID_TO_SUBJECT[subject] || subject;
+  switch (actualSubject) {
     case Subject.Physics: return <Atom className="w-4 h-4" />;
     case Subject.Chemistry: return <FlaskConical className="w-4 h-4" />;
     case Subject.Mathematics: return <Hash className="w-4 h-4" />;
@@ -71,7 +85,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // Views
-  const [view, setView] = useState<'explore' | 'upload' | 'admin' | 'bounties' | 'profile' | 'community_hall' | 'points_shop' | 'team'>('explore');
+  const [view, setView] = useState<'explore' | 'upload' | 'admin' | 'bounties' | 'profile' | 'community_hall' | 'points_shop' | 'team' | 'announcements'>('explore');
   const [layer, setLayer] = useState<Layer>('general');
   const [activeCommunityId, setActiveCommunityId] = useState<string | null>(null);
   
@@ -81,6 +95,11 @@ export default function App() {
   const [bounties, setBounties] = useState<Bounty[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [dismissedAnnouncements, setDismissedAnnouncements] = useState<string[]>(() => {
+    const saved = localStorage.getItem('dismissedAnnouncements');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [selectedDemo, setSelectedDemo] = useState<Demo | null>(null);
@@ -111,6 +130,10 @@ export default function App() {
 
   // Context for uploading to a bounty
   const [bountyContext, setBountyContext] = useState<Bounty | null>(null);
+
+  // Bounty detail modal state
+  const [selectedBounty, setSelectedBounty] = useState<(Bounty & { solutions?: any[] }) | null>(null);
+  const [isBountyDetailOpen, setIsBountyDetailOpen] = useState(false);
 
   const [isChatOpen, setIsChatOpen] = useState(false);
 
@@ -228,12 +251,41 @@ export default function App() {
   const refreshAllData = async () => {
     await StorageService.initialize();
 
+    // Refresh current user data if logged in
+    if (isLoggedIn && currentUserId) {
+      try {
+        const user = await StorageService.getUserById(currentUserId);
+        setCurrentUser(user);
+        // Also refresh from auth/me to ensure we have the latest data
+        const freshUser = await AuthAPI.getCurrentUser();
+        if (freshUser) {
+          setCurrentUser(freshUser);
+        }
+      } catch (error) {
+        console.error('Failed to refresh current user:', error);
+      }
+    }
+
     // Load demos based on sort preference
     let demosData: Demo[];
     if (sortBy === 'likes') {
       demosData = await StorageService.getDemosSortedByLikes({});
     } else {
       demosData = await StorageService.getAllDemos();
+    }
+
+    let announcementsData: Announcement[] = [];
+    try {
+      if (isLoggedIn && (role === 'general_admin' || userCreatedCommunities.length > 0)) {
+        announcementsData = await StorageService.getAllAnnouncementsAdmin();
+      } else {
+        announcementsData = await StorageService.getAnnouncements({
+          layer: layer,
+          communityId: layer === 'community' ? activeCommunityId : undefined
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load announcements:', err);
     }
 
     const [categoriesData, bountiesData, communitiesData, usersData] = await Promise.all([
@@ -250,6 +302,7 @@ export default function App() {
     setBounties(bountiesData || []);
     setCommunities(communitiesDataArray);
     setAllUsers(usersData || []);
+    setAnnouncements(announcementsData || []);
     
     // Check if user is a community admin directly using communitiesData
     const isCommunityAdmin = communitiesDataArray.some(c => c.creatorId === currentUserId);
@@ -456,6 +509,10 @@ export default function App() {
       return communities.filter(c => c.members.includes(currentUserId) && c.status === 'approved');
   }, [communities, currentUserId, role]);
 
+  const userCreatedCommunities = useMemo(() => {
+      return communities.filter(c => c.creatorId === currentUserId);
+  }, [communities, currentUserId]);
+
   const activeCommunity = useMemo(() => {
       return communities.find(c => c.id === activeCommunityId);
   }, [communities, activeCommunityId]);
@@ -524,14 +581,17 @@ export default function App() {
         matchCategory = true;
       } else {
         if (layer === 'general') {
-          matchCategory = d.categoryId === activeCategory;
+          // 处理category_id是分类名称的情况
+          const categoryName = categories.find(c => c.id === activeCategory)?.name;
+          matchCategory = d.categoryId === activeCategory || (categoryName && d.categoryId === categoryName);
         } else {
           const validIds = getCategoryAndChildrenIds(activeCategory);
           matchCategory = validIds.includes(d.categoryId);
         }
       }
       const matchSearch = d.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          d.description.toLowerCase().includes(searchQuery.toLowerCase());
+                          d.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          (d.tags && d.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())));
       
       // Admin sees pending, users see published + their own pending demos
       if (view === 'explore') {
@@ -545,6 +605,10 @@ export default function App() {
   const pendingDemos = useMemo(() => {
     return demos.filter(d => {
       if (d.status !== 'pending') return false;
+      
+      // Skip demos that are part of a bounty (they should be reviewed by bounty creator first)
+      if (d.bountyId) return false;
+      
       if (role === 'general_admin') return true; // General Admin sees ALL pending
       
       // Community Admin Review
@@ -556,11 +620,30 @@ export default function App() {
 
   // Actions
   const handleUpload = async (newDemo: Demo) => {
+    console.log('=== handleUpload ===');
+    console.log('newDemo:', newDemo);
+    console.log('bountyContext:', bountyContext);
+    
+    let demoToUse = newDemo;
+    
     // For multi-file projects, the demo is already created on the backend
     // For single-file projects, we need to save it
     if (newDemo.projectType !== 'multi-file') {
-      await StorageService.saveDemo(newDemo);
+      demoToUse = await StorageService.saveDemo(newDemo);
+      console.log('Demo saved with real ID:', demoToUse.id);
     }
+    
+    // If this is for a bounty, submit it as a solution
+    if (bountyContext) {
+      try {
+        console.log('Submitting solution for bounty:', bountyContext.id, 'demo:', demoToUse.id);
+        await BountiesAPI.submitSolution(bountyContext.id, demoToUse.id);
+        console.log('Solution submitted successfully');
+      } catch (error) {
+        console.error('Error submitting bounty solution:', error);
+      }
+    }
+    
     await refreshAllData();
     setView('explore');
     setBountyContext(null);
@@ -605,25 +688,25 @@ export default function App() {
     await refreshAllData();
   };
   
-  const handleCreateBounty = async (data: {title: string, desc: string, reward: string}) => {
-    await StorageService.addBounty({
-      id: `b-${Date.now()}`,
-      title: data.title, 
-      description: data.desc, 
-      reward: data.reward, 
-      layer,
-      communityId: layer === 'community' ? activeCommunityId || undefined : undefined,
-      status: 'open', 
-      creator: currentUserId, 
-      createdAt: Date.now()
-    });
-    await refreshAllData();
+  const handleCreateBounty = async (data: any) => {
+    try {
+      const newBounty = await BountiesAPI.create(data);
+      await refreshAllData();
+    } catch (error) {
+      console.error('Create bounty error:', error);
+      alert('发布悬赏失败');
+    }
   };
 
   const handleDeleteBounty = async (id: string) => {
     if(window.confirm(t('confirmDeleteBounty'))) {
-      await StorageService.deleteBounty(id);
-      await refreshAllData();
+      try {
+        await BountiesAPI.delete(id);
+        await refreshAllData();
+      } catch (error) {
+        console.error('Delete bounty error:', error);
+        alert('删除悬赏失败');
+      }
     }
   }
 
@@ -782,7 +865,7 @@ export default function App() {
                 <p className="text-sm text-red-600 mb-4">原因: {banReason}</p>
               )}
               <p className="text-sm text-slate-500 mb-6">
-                您只能访问个人中心查看您的作品，并提交解封申诉
+                {t('banAppealMessage')}
               </p>
             </div>
             <button
@@ -832,7 +915,7 @@ export default function App() {
                               return (
                                   <div className="w-full mb-2 border border-dashed border-slate-300 text-slate-400 rounded-xl py-2.5 text-xs font-bold flex items-center justify-center gap-2 cursor-not-allowed bg-slate-50">
                                       <Lock className="w-3.5 h-3.5" />
-                                      需要10贡献值解锁
+                                      {t('need10Points')}
                                   </div>
                               );
                           }
@@ -881,7 +964,7 @@ export default function App() {
                           className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-700 hover:bg-amber-100 transition-colors"
                       >
                           <MessageSquare className="w-3.5 h-3.5" />
-                          社区反馈
+                          {t('communityFeedback')}
                       </button>
                   )}
               </div>
@@ -912,29 +995,36 @@ export default function App() {
             </button>
 
             {layer === 'general' ? (
-              Object.values(Subject).map(sub => {
-                const translationKey: any = {
-                  'Physics': 'physics',
-                  'Chemistry': 'chemistry',
-                  'Mathematics': 'mathematics',
-                  'Biology': 'biology',
-                  'Computer Science': 'computerScience',
-                  'Astronomy': 'astronomy',
-                  'Earth Science': 'earthScience',
-                  'Creative Tools': 'creativeTools'
-                }[sub] || sub.toLowerCase();
-                
-                return (
-                  <button 
-                    key={sub}
-                    onClick={() => handleCategorySelect(sub)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-xl transition-all ${activeCategory === sub ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-slate-50'}`}
-                  >
-                    <SubjectIcon subject={sub} />
-                    {t(translationKey)}
-                  </button>
-                );
-              })
+              categories
+                .filter(c => !c.communityId && !c.parentId)
+                .sort((a, b) => {
+                  const order = ['cat-physics', 'cat-chemistry', 'cat-mathematics', 'cat-biology', 'cat-computer-science', 'cat-astronomy', 'cat-earth-science', 'cat-creative-tools'];
+                  return order.indexOf(a.id) - order.indexOf(b.id);
+                })
+                .map(cat => {
+                  const subjectName = CATEGORY_ID_TO_SUBJECT[cat.id] || cat.name;
+                  const translationKey: any = {
+                    'Physics': 'physics',
+                    'Chemistry': 'chemistry',
+                    'Mathematics': 'mathematics',
+                    'Biology': 'biology',
+                    'Computer Science': 'computerScience',
+                    'Astronomy': 'astronomy',
+                    'Earth Science': 'earthScience',
+                    'Creative Tools': 'creativeTools'
+                  }[subjectName] || subjectName.toLowerCase();
+                  
+                  return (
+                    <button 
+                      key={cat.id}
+                      onClick={() => handleCategorySelect(cat.id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-xl transition-all ${activeCategory === cat.id ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      <SubjectIcon subject={cat.id} />
+                      {t(translationKey)}
+                    </button>
+                  );
+                })
             ) : (
               <div className="mt-2 space-y-1">
                  {rootCategories.length === 0 && (
@@ -1025,7 +1115,7 @@ export default function App() {
             <div>
               <h1 className="text-lg font-bold text-slate-800 tracking-tight leading-none">{t('appTitle')}</h1>
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                个人中心
+                {t('personalCenter')}
               </span>
             </div>
           </div>
@@ -1146,6 +1236,18 @@ export default function App() {
           </button>
 
           <button
+             onClick={() => setView('announcements')}
+             className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all relative ${view === 'announcements' ? 'bg-white text-rose-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            {t('announcements')}
+            {announcements.filter(a => !dismissedAnnouncements.includes(a.id)).length > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                {announcements.filter(a => !dismissedAnnouncements.includes(a.id)).length}
+              </span>
+            )}
+          </button>
+
+          <button
              onClick={() => { setBountyContext(null); setView('upload'); }}
              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${view === 'upload' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
@@ -1210,7 +1312,7 @@ export default function App() {
         <button
           onClick={() => handleOpenFeedback('website_feedback', 'general')}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border border-blue-200 hover:shadow-md transition-all shrink-0"
-          title="提交网站反馈"
+          title={t('submitWebsiteFeedback')}
         >
           <MessageSquare className="w-4 h-4" />
           <span className="hidden sm:inline">反馈</span>
@@ -1224,10 +1326,10 @@ export default function App() {
               setShowHelpTooltip(false);
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border border-amber-200 hover:shadow-md transition-all"
-            title="查看使用指南"
+            title={t('viewGuide')}
           >
             <BookOpen className="w-4 h-4" />
-            <span className="hidden sm:inline">指南</span>
+            <span className="hidden sm:inline">{t('guide')}</span>
           </button>
 
           {/* First Login Tooltip */}
@@ -1239,7 +1341,7 @@ export default function App() {
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-slate-800">欢迎使用！</p>
-                  <p className="text-xs text-slate-600 mt-1">点击查看新手指南，快速了解如何使用本平台 🎉</p>
+                  <p className="text-xs text-slate-600 mt-1">{t('clickToViewGuide')}</p>
                 </div>
               </div>
               <div className="absolute -top-1.5 right-4 w-3 h-3 bg-white border-t border-l border-amber-200 transform rotate-45"></div>
@@ -1317,7 +1419,38 @@ export default function App() {
   );
 };
 
-  const renderGallery = () => (
+  const renderGalleryWithAnnouncements = () => {
+    const activeAnnouncements = announcements.filter(
+      a => a.isActive && !dismissedAnnouncements.includes(a.id)
+    );
+
+    return (
+      <div className="space-y-6 pb-20">
+        {/* Announcements Section */}
+        {activeAnnouncements.length > 0 && (
+          <div className="space-y-3">
+            {activeAnnouncements.map((announcement) => (
+              <AnnouncementCard
+                key={announcement.id}
+                announcement={announcement}
+                lang={language}
+                onDismiss={() => {
+                  const newDismissed = [...dismissedAnnouncements, announcement.id];
+                  setDismissedAnnouncements(newDismissed);
+                  localStorage.setItem('dismissedAnnouncements', JSON.stringify(newDismissed));
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Demos Grid */}
+        {renderDemosGrid()}
+      </div>
+    );
+  };
+
+  const renderDemosGrid = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8 pb-20">
       {filteredDemos.map(demo => {
         const isGeneralAdmin = role === 'general_admin';
@@ -1351,7 +1484,63 @@ export default function App() {
             )}
             <div className="absolute top-4 left-4 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider text-slate-600 shadow-lg flex items-center gap-2">
               <span className={`w-1.5 h-1.5 rounded-full ${demo.layer === 'general' ? 'bg-indigo-500' : 'bg-emerald-500'}`}></span>
-              {demo.layer === 'general' ? demo.categoryId : communities.find(c => c.id === demo.communityId)?.name || t('layerCommunity')}
+              {demo.layer === 'general' ? (() => {
+                // 首先尝试通过CATEGORY_ID_TO_SUBJECT获取主题名称
+                const subject = CATEGORY_ID_TO_SUBJECT[demo.categoryId];
+                if (subject) {
+                  const translationKey = {
+                    'Physics': 'physics',
+                    'Chemistry': 'chemistry',
+                    'Mathematics': 'mathematics',
+                    'Biology': 'biology',
+                    'Computer Science': 'computerScience',
+                    'Astronomy': 'astronomy',
+                    'Earth Science': 'earthScience',
+                    'Creative Tools': 'creativeTools'
+                  }[subject] as any;
+                  if (translationKey) {
+                    return t(translationKey);
+                  }
+                }
+                
+                // 尝试直接使用demo.categoryId作为主题名称获取翻译
+                const directTranslationKey = {
+                  'Physics': 'physics',
+                  'Chemistry': 'chemistry',
+                  'Mathematics': 'mathematics',
+                  'Biology': 'biology',
+                  'Computer Science': 'computerScience',
+                  'Astronomy': 'astronomy',
+                  'Earth Science': 'earthScience',
+                  'Creative Tools': 'creativeTools'
+                }[demo.categoryId] as any;
+                if (directTranslationKey) {
+                  return t(directTranslationKey);
+                }
+                
+                // 如果demo.categoryId是分类ID，尝试获取对应的主题名称
+                const category = categories.find(c => c.id === demo.categoryId);
+                if (category) {
+                  const subjectName = CATEGORY_ID_TO_SUBJECT[category.id] || category.name;
+                  const translationKey = {
+                    'Physics': 'physics',
+                    'Chemistry': 'chemistry',
+                    'Mathematics': 'mathematics',
+                    'Biology': 'biology',
+                    'Computer Science': 'computerScience',
+                    'Astronomy': 'astronomy',
+                    'Earth Science': 'earthScience',
+                    'Creative Tools': 'creativeTools'
+                  }[subjectName] as any;
+                  if (translationKey) {
+                    return t(translationKey);
+                  }
+                  return category.name;
+                }
+                
+                // 最后返回原始值
+                return demo.categoryId;
+              })() : communities.find(c => c.id === demo.communityId)?.name || t('layerCommunity')}
             </div>
             {demo.status === 'pending' && (
                <div className="absolute top-4 right-4 bg-amber-100 text-amber-700 px-3 py-1.5 rounded-full text-[10px] font-bold shadow-lg flex items-center gap-1">
@@ -1367,6 +1556,17 @@ export default function App() {
           
           <div className="p-5 flex-1 flex flex-col pointer-events-none bg-white">
             <h3 className="text-lg font-bold text-slate-800 mb-2 line-clamp-1 group-hover:text-indigo-600 transition-colors">{demo.title}</h3>
+            {demo.tags && demo.tags.length > 0 && (
+              <div className="mb-3">
+                <TagDisplay 
+                  tags={demo.tags} 
+                  lang={language}
+                  onTagClick={(tagId) => {
+                    setSearchQuery(tagId);
+                  }}
+                />
+              </div>
+            )}
             <p className="text-sm text-slate-500 mb-6 line-clamp-2 flex-1 leading-relaxed">{demo.description}</p>
 
             <div className="flex items-center justify-between pt-4 border-t border-slate-50">
@@ -1468,7 +1668,8 @@ export default function App() {
             </div>
           )}
         </motion.div>
-      );})}
+        );
+      })}
       
       {filteredDemos.length === 0 && (
         <div className="col-span-full py-32 text-center">
@@ -1481,6 +1682,8 @@ export default function App() {
       )}
     </div>
   );
+
+  const renderGallery = () => renderGalleryWithAnnouncements();
 
   const renderCommunityHall = () => {
       return (
@@ -1658,11 +1861,37 @@ export default function App() {
       )
   }
 
+  const handleOpenBountyDetail = async (bounty: Bounty) => {
+    try {
+      console.log('=== handleOpenBountyDetail ===');
+      console.log('Original bounty:', bounty);
+      
+      const detailedBounty = await BountiesAPI.getById(bounty.id);
+      console.log('Detailed bounty from API:', detailedBounty);
+      console.log('Has solutions:', !!detailedBounty.solutions);
+      console.log('Solutions count:', detailedBounty.solutions?.length);
+      
+      setSelectedBounty(detailedBounty);
+      setIsBountyDetailOpen(true);
+    } catch (error) {
+      console.error('Get bounty detail error:', error);
+      alert('获取悬赏详情失败');
+    }
+  };
+
   const renderBounties = () => {
-    // Filter bounties based on layer/community
+    // Filter bounties based on layer/community and visibility
     const visibleBounties = bounties.filter(b => {
         if(b.layer !== layer) return false;
         if(layer === 'community' && b.communityId !== activeCommunityId) return false;
+        
+        // Visibility control: closed bounties only visible to creator and accepted user
+        if (b.status === 'closed') {
+            if (!currentUserId) return false;
+            if (b.creatorId === currentUserId) return true;
+            if (b.acceptedUserId === currentUserId) return true;
+            return false;
+        }
         return true;
     });
 
@@ -1697,8 +1926,13 @@ export default function App() {
              {visibleBounties.map(b => (
                  <div key={b.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-all relative group">
                      <div className="flex justify-between items-start mb-4">
-                         <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${b.status === 'open' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                             {b.status}
+                         <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                             b.status === 'open' ? 'bg-emerald-100 text-emerald-700' :
+                             b.status === 'in_review' ? 'bg-amber-100 text-amber-700' :
+                             'bg-slate-100 text-slate-500'
+                         }`}>
+                             {b.status === 'open' ? '进行中' :
+                              b.status === 'in_review' ? '审核中' : '已完成'}
                          </span>
                          <span className="text-amber-600 font-bold bg-amber-50 px-3 py-1 rounded-lg border border-amber-100 flex items-center gap-1">
                              <Award className="w-4 h-4" />
@@ -1709,26 +1943,22 @@ export default function App() {
                      <p className="text-slate-500 text-sm mb-6 leading-relaxed">{b.description}</p>
                      
                      <div className="flex items-center gap-4 pt-4 border-t border-slate-100">
-                         {b.status === 'open' && (
+                         {(role === 'general_admin' || b.creatorId === currentUserId) && (
                              <button 
-                                onClick={() => {
-                                    setBountyContext(b);
-                                    setView('upload');
+                                onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    handleDeleteBounty(b.id); 
                                 }}
-                                className="flex-1 py-2 bg-slate-900 text-white font-bold rounded-lg hover:bg-indigo-600 transition-colors text-sm"
-                             >
-                                 {t('submitSolution')}
-                             </button>
-                         )}
-                         {(role === 'general_admin' || b.creator === currentUserId) && (
-                             <button 
-                                onClick={() => handleDeleteBounty(b.id)}
                                 className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                              >
                                  <Trash2 className="w-5 h-5" />
                              </button>
                          )}
                      </div>
+                     <button 
+                        onClick={() => handleOpenBountyDetail(b)}
+                        className="absolute inset-0 cursor-pointer"
+                     />
                  </div>
              ))}
          </div>
@@ -1764,7 +1994,7 @@ export default function App() {
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl font-medium transition-colors"
              >
                  <Users className="w-4 h-4" />
-                 User Management
+                 {t('userManagement')}
              </button>
          </div>
 
@@ -1772,9 +2002,9 @@ export default function App() {
              <StatsCard label={t('statsPending')} value={pendingDemos.length} color="bg-orange-500 text-orange-500" />
              <StatsCard label="发布审批" value={publications.length} color="bg-amber-500 text-amber-500" />
              {role === 'general_admin' && (
-                 <StatsCard label="Pending Communities" value={pendingComms.length} color="bg-blue-500 text-blue-500" />
+                 <StatsCard label={t('pendingCommunities')} value={pendingComms.length} color="bg-blue-500 text-blue-500" />
              )}
-             <StatsCard label={t('statsUsers')} value={role === 'general_admin' ? "1,240" : (activeCommunity?.members.length || 0)} color="bg-emerald-500 text-emerald-500" />
+             <StatsCard label={t('statsUsers')} value={role === 'general_admin' ? allUsers.length : (activeCommunity?.members.length || 0)} color="bg-emerald-500 text-emerald-500" />
          </div>
 
          {/* Pending Communities (General Admin Only) */}
@@ -1782,7 +2012,7 @@ export default function App() {
              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                  <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                      <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                         <Building2 className="w-5 h-5 text-indigo-500" /> Pending Communities
+                         <Building2 className="w-5 h-5 text-indigo-500" /> {t('pendingCommunities')}
                      </h3>
                      <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-xs font-bold">{pendingComms.length}</span>
                  </div>
@@ -2092,6 +2322,88 @@ export default function App() {
     return <TeamPage onBack={() => setView('explore')} />;
   }
 
+  // --- Announcements View ---
+  const renderAnnouncements = () => {
+    const userCommunities = communities.filter(c => c.creatorId === currentUserId);
+    const isGeneralAdmin = role === 'general_admin';
+
+    return (
+      <div className="space-y-8 pb-20">
+        {/* Header */}
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 border-b border-slate-200 pb-6 gap-6">
+          <div className="flex-1">
+            <h2 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
+              <div className="p-2 bg-rose-100 rounded-xl text-rose-600">
+                <Megaphone className="w-8 h-8" />
+              </div>
+              {t('announcementsCenter')}
+            </h2>
+            <p className="text-slate-500 mt-2 text-lg">
+              {t('viewAndManageAnnouncements')}
+            </p>
+          </div>
+        </div>
+
+        {/* Announcements List */}
+        {(isGeneralAdmin || userCreatedCommunities.length > 0) && (
+          <div className="mb-12">
+            <AnnouncementManager
+              announcements={announcements}
+              lang={language}
+              currentUserId={currentUserId}
+              isGeneralAdmin={isGeneralAdmin}
+              userCommunities={userCreatedCommunities.map(c => ({ id: c.id, name: c.name }))}
+              onSave={async (announcement) => {
+                const newAnn = await StorageService.createAnnouncement({
+                  ...announcement,
+                  createdByUsername: currentUser?.username,
+                });
+                await refreshAllData();
+                alert(t('announcementPublished'));
+              }}
+              onDelete={async (id) => {
+                if (window.confirm(t('confirmDeleteAnnouncement'))) {
+                  await StorageService.deleteAnnouncement(id);
+                  await refreshAllData();
+                }
+              }}
+              onToggleActive={async (id, isActive) => {
+                await StorageService.toggleAnnouncementActive(id, isActive);
+                await refreshAllData();
+              }}
+            />
+          </div>
+        )}
+
+        {/* Active Announcements */}
+        <div>
+          <h3 className="text-xl font-bold text-slate-800 mb-6">
+            {t('latestAnnouncements')}
+          </h3>
+          <div className="space-y-4">
+            {announcements.filter(a => a.isActive).length === 0 ? (
+              <div className="text-center py-12 bg-slate-50 rounded-2xl border border-slate-200">
+                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Megaphone className="w-8 h-8 text-slate-400" />
+                </div>
+                <p className="text-slate-500">{t('noAnnouncements')}</p>
+              </div>
+            ) : (
+              announcements.filter(a => a.isActive).map((announcement) => (
+                <AnnouncementCard
+                  key={announcement.id}
+                  announcement={announcement}
+                  lang={language}
+                  showFull={true}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen font-sans relative" style={{
       backgroundColor: theme === 'dark' ? '#0f172a' : '#f8fafc',
@@ -2119,6 +2431,7 @@ export default function App() {
                   {view === 'explore' && renderGallery()}
                   {view === 'community_hall' && renderCommunityHall()}
                   {view === 'bounties' && renderBounties()}
+                  {view === 'announcements' && renderAnnouncements()}
                   {view === 'upload' && (
                     <UploadWizard 
                       t={t} 
@@ -2175,6 +2488,10 @@ export default function App() {
         onClose={() => setIsBountyModalOpen(false)}
         onSubmit={handleCreateBounty}
         t={t}
+        user={currentUser}
+        categories={categories}
+        userCommunities={userCreatedCommunities}
+        lang={language}
       />
 
       <CreateCategoryModal 
@@ -2311,6 +2628,7 @@ export default function App() {
         }}
         isOpen={isChatOpen}
         setIsOpen={setIsChatOpen}
+        demos={demos}
       />
       
       {/* Hidden File Input for Cover Update */}
@@ -2327,7 +2645,9 @@ export default function App() {
           <DemoPlayer
             demo={selectedDemo}
             currentUserId={currentUserId}
+            currentUser={currentUser}
             currentUserRole={role}
+            categories={categories}
             onClose={() => {
               setSelectedDemo(null);
               if (!wasViewingProfile) {
@@ -2384,6 +2704,48 @@ export default function App() {
         )}
       </AnimatePresence>
       
+      {/* Bounty Modals */}
+      <CreateBountyModal 
+        isOpen={isBountyModalOpen}
+        onClose={() => setIsBountyModalOpen(false)}
+        onSubmit={handleCreateBounty}
+        t={t}
+        user={currentUser}
+        categories={categories}
+        userCommunities={myCommunities}
+        lang={language}
+      />
+      <BountyDetailModal
+        isOpen={isBountyDetailOpen}
+        onClose={() => setIsBountyDetailOpen(false)}
+        bounty={selectedBounty}
+        currentUser={currentUser}
+        onOpenDemo={(demoId) => {
+          const demo = demos.find(d => d.id === demoId);
+          if (demo) {
+            handleOpenDemoWithPermission(demo);
+          }
+        }}
+        onRefresh={async () => {
+          await refreshAllData();
+          if (selectedBounty) {
+            try {
+              const updatedBounty = await BountiesAPI.getById(selectedBounty.id);
+              setSelectedBounty(updatedBounty);
+            } catch (error) {
+              console.error('Failed to refresh bounty detail:', error);
+            }
+          }
+        }}
+        userDemos={demos.filter(d => d.author === currentUserId)}
+        onUploadForBounty={() => {
+          setView('upload');
+          setBountyContext(selectedBounty);
+        }}
+        onDelete={handleDeleteBounty}
+        lang={language}
+      />
+      
       {/* Feedback Modal */}
       {feedbackModalData && (
         <FeedbackModal
@@ -2399,6 +2761,7 @@ export default function App() {
           demoTitle={feedbackModalData.demoTitle}
           communityName={feedbackModalData.communityName}
           onSuccess={handleFeedbackSuccess}
+          t={t}
         />
       )}
 

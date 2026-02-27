@@ -20,6 +20,7 @@ import publicationsRoutes from './routes/publications.js';
 import feedbackRoutes from './routes/feedback.js';
 import featuresRoutes from './routes/features.js';
 import demoFeaturesRoutes from './routes/demoFeatures.js';
+import announcementsRoutes from './routes/announcements.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -367,6 +368,7 @@ app.use('/api/v1/publications', publicationsRoutes);
 app.use('/api/v1/feedback', feedbackRoutes);
 app.use('/api/v1/features', featuresRoutes);
 app.use('/api/v1/demo-features', demoFeaturesRoutes);
+app.use('/api/v1/announcements', announcementsRoutes);
 
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {

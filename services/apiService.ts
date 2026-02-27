@@ -1,4 +1,4 @@
-import { Demo, Category, Bounty, Community, User, UserStats, DemoPublication, Feedback } from '../types';
+import { Demo, Category, Bounty, Community, User, UserStats, DemoPublication, Feedback, Layer, Announcement } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
@@ -40,7 +40,7 @@ const apiRequest = async <T>(
 // Auth API
 export const AuthAPI = {
   login: async (username: string, password: string) => {
-    const result = await apiRequest<{ token: string; user: { id: string; username: string; role: string } }>('/auth/login', {
+    const result = await apiRequest<{ token: string; user: User }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     });
@@ -52,7 +52,7 @@ export const AuthAPI = {
   },
   
   register: async (username: string, password: string) => {
-    const result = await apiRequest<{ token: string; user: { id: string; username: string; role: string } }>('/auth/register', {
+    const result = await apiRequest<{ token: string; user: User }>('/auth/register', {
         method: 'POST',
         body: JSON.stringify({ username, password }),
     });
@@ -64,7 +64,10 @@ export const AuthAPI = {
   },
   
   getCurrentUser: async () => {
-    const result = await apiRequest<{ id: string; username: string; role: string }>('/auth/me');
+    const result = await apiRequest<User>('/auth/me');
+    if (result.data) {
+      localStorage.setItem('sci_demo_user', JSON.stringify(result.data));
+    }
     return result.data;
   },
   
@@ -120,6 +123,7 @@ export const DemosAPI = {
         originalCode: demo.originalCode,
         config: demo.config,
         bountyId: demo.bountyId,
+        tags: demo.tags,
       }),
     });
     return result.data;
@@ -133,10 +137,20 @@ export const DemosAPI = {
     return result.data;
   },
   
+  // Update cover image
   updateCover: async (id: string, thumbnailUrl: string): Promise<Demo> => {
     const result = await apiRequest<Demo>(`/demos/${id}/cover`, {
       method: 'PATCH',
       body: JSON.stringify({ thumbnailUrl }),
+    });
+    return result.data;
+  },
+
+  // Update tags only (no approval needed)
+  updateTags: async (id: string, tags: string[]): Promise<Demo> => {
+    const result = await apiRequest<Demo>(`/demos/${id}/tags`, {
+      method: 'PATCH',
+      body: JSON.stringify({ tags }),
     });
     return result.data;
   },
@@ -389,7 +403,7 @@ export const CategoriesAPI = {
 
 // Bounties API
 export const BountiesAPI = {
-  getAll: async (params?: { layer?: string; communityId?: string; status?: string }): Promise<Bounty[]> => {
+  getAll: async (params?: { layer?: string; communityId?: string; status?: string; creatorId?: string }): Promise<Bounty[]> => {
     const queryParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
@@ -402,17 +416,58 @@ export const BountiesAPI = {
     const result = await apiRequest<Bounty[]>(`/bounties${query}`);
     return result.data;
   },
+
+  getById: async (id: string): Promise<Bounty & { solutions?: any[] }> => {
+    const result = await apiRequest<Bounty & { solutions?: any[] }>(`/bounties/${id}`);
+    return result.data;
+  },
   
-  create: async (bounty: Omit<Bounty, 'id' | 'createdAt'>): Promise<Bounty> => {
+  create: async (bounty: { 
+    title: string;
+    description: string;
+    reward: string;
+    rewardPoints: number;
+    layer: Layer;
+    communityId?: string;
+    publishLayer?: Layer;
+    publishCommunityId?: string;
+    publishCategoryId?: string;
+    programTitle?: string;
+    programDescription?: string;
+    programTags?: string[];
+  }): Promise<Bounty> => {
     const result = await apiRequest<Bounty>('/bounties', {
       method: 'POST',
       body: JSON.stringify({
         title: bounty.title,
         description: bounty.description,
         reward: bounty.reward,
+        rewardPoints: bounty.rewardPoints,
         layer: bounty.layer,
         communityId: bounty.communityId,
+        publishLayer: bounty.publishLayer,
+        publishCommunityId: bounty.publishCommunityId,
+        publishCategoryId: bounty.publishCategoryId,
+        programTitle: bounty.programTitle,
+        programDescription: bounty.programDescription,
+        programTags: bounty.programTags,
       }),
+    });
+    return result.data;
+  },
+
+  submitSolution: async (bountyId: string, demoId: string): Promise<any> => {
+    const result = await apiRequest<any>(`/bounties/${bountyId}/solutions`, {
+      method: 'POST',
+      body: JSON.stringify({ demoId }),
+    });
+    return result.data;
+  },
+
+  reviewSolution: async (bountyId: string, solutionId: string, action: 'accept' | 'reject', rejectionReason?: string): Promise<Bounty> => {
+    const result = await apiRequest<Bounty>(`/bounties/${bountyId}/solutions/${solutionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ action, rejectionReason }),
     });
     return result.data;
   },
@@ -607,6 +662,49 @@ export const FeedbackAPI = {
 
   delete: async (id: string): Promise<void> => {
     await apiRequest<void>(`/feedback/${id}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+export const AnnouncementsAPI = {
+  getAll: async (params?: { layer?: string; communityId?: string }): Promise<Announcement[]> => {
+    const queryParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          queryParams.append(key, value);
+        }
+      });
+    }
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
+    const result = await apiRequest<Announcement[]>(`/announcements${query}`);
+    return result.data;
+  },
+
+  getAllAdmin: async (): Promise<Announcement[]> => {
+    const result = await apiRequest<Announcement[]>('/announcements/all');
+    return result.data;
+  },
+
+  create: async (announcement: Omit<Announcement, 'id' | 'createdAt'>): Promise<Announcement> => {
+    const result = await apiRequest<Announcement>('/announcements', {
+      method: 'POST',
+      body: JSON.stringify(announcement),
+    });
+    return result.data;
+  },
+
+  toggleActive: async (id: string, isActive: boolean): Promise<Announcement> => {
+    const result = await apiRequest<Announcement>(`/announcements/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive }),
+    });
+    return result.data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await apiRequest<void>(`/announcements/${id}`, {
       method: 'DELETE',
     });
   },

@@ -97,8 +97,9 @@ const safeParseMarkdown = async (text: string): Promise<string> => {
     let html = marked.parse(processedText) as string;
 
     // Process demo links to add data attributes and styling
+    // Handle AI-generated links with onclick attributes
     html = html.replace(
-      /<a\s+href="#\/demo\/([^"]+)"[^>]*>([^<]*)<\/a>/gi,
+      /<a\s+[^>]*href="#\/demo\/([^"]+)"[^>]*>([^<]*)<\/a>/gi,
       '<a href="#/demo/$1" class="text-indigo-600 underline cursor-pointer hover:text-indigo-800" data-demo-id="$1" style="color: #4f46e5; text-decoration: underline; cursor: pointer;">$2</a>'
     );
 
@@ -106,6 +107,18 @@ const safeParseMarkdown = async (text: string): Promise<string> => {
     html = html.replace(
       /\[([^\]]+)\]\(#\/demo\/([^)]+)\)/g,
       '<a href="#/demo/$2" class="text-indigo-600 underline cursor-pointer hover:text-indigo-800" data-demo-id="$2" style="color: #4f46e5; text-decoration: underline; cursor: pointer;">$1</a>'
+    );
+
+    // Handle demo:// style links [text](demo://id)
+    html = html.replace(
+      /\[([^\]]+)\]\(demo:\/\/([^)]+)\)/g,
+      '<a href="#/demo/$2" class="text-indigo-600 underline cursor-pointer hover:text-indigo-800" data-demo-id="$2" style="color: #4f46e5; text-decoration: underline; cursor: pointer;">$1</a>'
+    );
+
+    // Handle raw demo:// links
+    html = html.replace(
+      /demo:\/\/([a-zA-Z0-9_-]+)/g,
+      '<a href="#/demo/$1" class="text-indigo-600 underline cursor-pointer hover:text-indigo-800" data-demo-id="$1" style="color: #4f46e5; text-decoration: underline; cursor: pointer;">$1</a>'
     );
 
     return html;
@@ -162,21 +175,19 @@ export const AIMessageContent: React.FC<AIMessageContentProps> = ({ text, onOpen
     return () => container.removeEventListener('click', handleLinkClick);
   }, [onOpenDemo]);
 
-  // Parse markdown when streaming ends or when text changes
+  // Parse markdown when text changes (even during streaming)
   useEffect(() => {
     if (text && text !== lastTextRef.current) {
       lastTextRef.current = text;
-      if (!isStreaming) {
-        safeParseMarkdown(text).then(html => {
-          setProcessedHtml(html);
-        });
-      }
+      safeParseMarkdown(text).then(html => {
+        setProcessedHtml(html);
+      });
     }
-  }, [text, isStreaming]);
+  }, [text]);
 
   // Initial parse for existing messages from localStorage
   useEffect(() => {
-    if (text && !processedHtml && !isStreaming) {
+    if (text && !processedHtml) {
       lastTextRef.current = text;
       safeParseMarkdown(text).then(html => {
         setProcessedHtml(html);
@@ -184,8 +195,8 @@ export const AIMessageContent: React.FC<AIMessageContentProps> = ({ text, onOpen
     }
   }, []);
 
-  // If streaming or no HTML yet, render raw text (maybe with simple formatting)
-  if (isStreaming || !processedHtml) {
+  // If no HTML yet, render raw text (maybe with simple formatting)
+  if (!processedHtml) {
     return (
       <div className="prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap font-sans">
         {text}

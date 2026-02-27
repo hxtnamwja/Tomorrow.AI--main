@@ -33,10 +33,55 @@ export interface Bounty {
   title: string;
   description: string;
   reward: string;
+  rewardPoints: number;
   layer: Layer;
   communityId?: string;
-  status: 'open' | 'closed';
+  status: 'open' | 'in_review' | 'closed';
   creator: string;
+  creatorId: string;
+  createdAt: number;
+  acceptedSolutionId?: string;
+  acceptedUserId?: string;
+  solutions?: Array<{
+    id: string;
+    bountyId: string;
+    demoId: string;
+    userId: string;
+    username: string;
+    submittedAt: number;
+    status: 'pending' | 'accepted' | 'rejected';
+    rejectionReason?: string;
+    reviewedAt?: number;
+  }>;
+  publishLayer?: Layer;
+  publishCommunityId?: string;
+  publishCategoryId?: string;
+  programTitle?: string;
+  programDescription?: string;
+  programTags?: string[];
+}
+
+// Announcement type
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  type: 'general' | 'community'; // General for all users, Community for specific community
+  layer: Layer;
+  communityId?: string; // Only for community announcements
+  createdBy: string; // User ID
+  createdByUsername?: string;
+  createdAt: number;
+  expiresAt?: number; // Optional expiration time
+  isActive: boolean;
+}
+
+export interface DemoComment {
+  id: string;
+  demoId: string;
+  userId: string;
+  username: string;
+  content: string;
   createdAt: number;
 }
 
@@ -102,6 +147,7 @@ export interface Demo {
   archived?: boolean; // Whether the demo is archived (soft deleted)
   archivedAt?: number; // When the demo was archived
   locations?: DemoLocation[]; // All locations where this demo is published
+  tags?: string[]; // Tags for the demo
 }
 
 export type UserLevel = 'learner' | 'researcher1' | 'researcher2' | 'researcher3' | 'co_creator';
@@ -211,6 +257,7 @@ export interface User {
   bio?: string;
   contributionPoints: number;
   points: number;
+  communityPoints: number;
   level: UserLevel;
   favorites: string[];
   avatarBorder?: string;

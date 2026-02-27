@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, RefreshCw, Sparkles, Heart, Maximize2, Minimize2, Smartphone, Send, RotateCcw, Trash2, FolderOpen, AlertTriangle, Monitor, UserCircle, Trash, Award, BookOpen, FlaskConical, Beaker, Trophy } from 'lucide-react';
+import { X, RefreshCw, Sparkles, Heart, Maximize2, Minimize2, Smartphone, Send, RotateCcw, Trash2, FolderOpen, AlertTriangle, Monitor, UserCircle, Trash, Award, BookOpen, FlaskConical, Beaker, Trophy, Edit3, Hash } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Demo } from '../types';
+import { Demo, Category, Subject } from '../types';
 import { AiService } from '../services/aiService';
 import { DemosAPI } from '../services/apiService';
 import { AIMessageContent } from './AIMessageContent';
-import { calculateLevel, getLevelInfo, LEVEL_CONFIG } from '../constants';
+import { calculateLevel, getLevelInfo, LEVEL_CONFIG, COMMON_TAGS, getTagColor, getTagName, isLevelAtLeast } from '../constants';
+import { TagSelector } from './TagSelector';
 
 // Level icon component
 const LevelIcon = ({ iconKey, className, color }: { iconKey: string, className?: string, color?: string }) => {
@@ -27,7 +28,29 @@ const LevelIcon = ({ iconKey, className, color }: { iconKey: string, className?:
   }
 };
 
-export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLikeChange, onViewUserProfile, allUsers, onPublishToOther, onReportDemo, currentUserRole }: { demo: Demo, currentUserId?: string, currentUserRole?: string, onClose: () => void, t: any, onOpenDemo?: (demoId: string) => void, onLikeChange?: (demoId: string, likeCount: number, userLiked: boolean) => void, onViewUserProfile?: (userId: string) => void, allUsers?: any[], onPublishToOther?: () => void, onReportDemo?: () => void }) => {
+const CATEGORY_ID_TO_SUBJECT: Record<string, string> = {
+  'cat-physics': Subject.Physics,
+  'cat-chemistry': Subject.Chemistry,
+  'cat-mathematics': Subject.Mathematics,
+  'cat-biology': Subject.Biology,
+  'cat-computer-science': Subject.ComputerScience,
+  'cat-astronomy': Subject.Astronomy,
+  'cat-earth-science': Subject.EarthScience,
+  'cat-creative-tools': Subject.CreativeTools
+};
+
+const CATEGORY_ID_TO_TRANSLATION_KEY: Record<string, string> = {
+  'cat-physics': 'physics',
+  'cat-chemistry': 'chemistry',
+  'cat-mathematics': 'mathematics',
+  'cat-biology': 'biology',
+  'cat-computer-science': 'computerScience',
+  'cat-astronomy': 'astronomy',
+  'cat-earth-science': 'earthScience',
+  'cat-creative-tools': 'creativeTools'
+};
+
+export const DemoPlayer = ({ demo, currentUserId, currentUser, onClose, t, onOpenDemo, onLikeChange, onViewUserProfile, allUsers, onPublishToOther, onReportDemo, currentUserRole, categories }: { demo: Demo, currentUserId?: string, currentUser?: any, onClose: () => void, t: any, onOpenDemo?: (demoId: string) => void, onLikeChange?: (demoId: string, likeCount: number, userLiked: boolean) => void, onViewUserProfile?: (userId: string) => void, allUsers?: any[], onPublishToOther?: () => void, onReportDemo?: () => void, currentUserRole?: 'user' | 'general_admin', categories?: Category[] }) => {
   const [activeTab, setActiveTab] = useState<'basicInfo' | 'code' | 'ai'>('basicInfo');
   const [iframeKey, setIframeKey] = useState(0);
   const [aiMessages, setAiMessages] = useState<{role: 'user' | 'model', text: string}[]>([]);
@@ -294,6 +317,8 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
   const [editZipFile, setEditZipFile] = useState<File | null>(null);
   const [editOriginalZipFile, setEditOriginalZipFile] = useState<File | null>(null);
   const [editLoading, setEditLoading] = useState(false);
+  const [editTags, setEditTags] = useState<string[]>([]);
+  const [isEditingTags, setIsEditingTags] = useState(false);
 
   // Load project structure for multi-file projects
   useEffect(() => {
@@ -307,8 +332,12 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
     if (isEditModalOpen) {
       setEditTitle(demo.title);
       setEditDescription(demo.description || '');
+      setEditTags(demo.tags || []);
     }
-  }, [isEditModalOpen, demo]);
+    if (isEditingTags) {
+      setEditTags(demo.tags || []);
+    }
+  }, [isEditModalOpen, isEditingTags, demo]);
   
   const handleEditSubmit = async () => {
     if (!editTitle.trim()) {
@@ -323,6 +352,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
       
       formData.append('title', editTitle);
       formData.append('description', editDescription);
+      formData.append('tags', JSON.stringify(editTags));
       
       if (editZipFile) {
         formData.append('zipFile', editZipFile);
@@ -356,6 +386,17 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
       alert(t('updateFailed'));
     } finally {
       setEditLoading(false);
+    }
+  };
+
+  const handleSaveTags = async () => {
+    try {
+      await DemosAPI.updateTags(demo.id, editTags);
+      setIsEditingTags(false);
+      onClose();
+    } catch (error) {
+      console.error('Save tags error:', error);
+      alert(t('updateTagsFailed'));
     }
   };
 
@@ -525,6 +566,13 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
   const [likeCount, setLikeCount] = useState(demo.likeCount || 0);
   const [userLiked, setUserLiked] = useState(demo.userLiked || false);
   const [likeLoading, setLikeLoading] = useState(false);
+
+  // Check if user can like (researcher1 and above)
+  const canLike = useMemo(() => {
+    if (!currentUser) return false;
+    const userLevel = calculateLevel(currentUser.contributionPoints || 0, currentUser.role === 'general_admin');
+    return isLevelAtLeast(userLevel, 'researcher1');
+  }, [currentUser]);
 
   // Mobile fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -749,7 +797,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
 
   // Handle like/unlike
   const handleLike = async () => {
-    if (likeLoading) return;
+    if (!canLike || likeLoading) return;
     setLikeLoading(true);
     try {
       if (userLiked) {
@@ -971,7 +1019,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
               <div className="md:hidden absolute top-4 right-4 bg-indigo-600/90 backdrop-blur-sm text-white px-3 py-2 rounded-lg shadow-lg animate-pulse">
                 <div className="flex items-center gap-2">
                   <Smartphone className="w-4 h-4" />
-                  <span className="text-xs font-bold">点击底部&quot;全屏&quot;横屏观看</span>
+                  <span className="text-xs font-bold">{t('clickFullscreenToWatch')}</span>
                 </div>
               </div>
             )}
@@ -987,8 +1035,8 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                   <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-white/10 flex items-center justify-center">
                     <RotateCcw className="w-10 h-10 animate-spin" style={{ animationDuration: '3s' }} />
                   </div>
-                  <p className="text-xl font-bold mb-2">请旋转手机</p>
-                  <p className="text-sm text-white/70 mb-6">横屏观看体验更佳</p>
+                  <p className="text-xl font-bold mb-2">{t('pleaseRotatePhone')}</p>
+                  <p className="text-sm text-white/70 mb-6">{t('landscapeModeIsBetter')}</p>
                   <button
                     onClick={toggleFullscreen}
                     className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm transition-colors"
@@ -1136,13 +1184,13 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                      {/* Like Button */}
                      <button
                        onClick={handleLike}
-                       disabled={likeLoading}
+                       disabled={!canLike || likeLoading}
                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
                          userLiked
                            ? 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100'
                            : 'bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200 hover:text-slate-700'
-                       } ${likeLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                       title={userLiked ? t('unlike') || '取消点赞' : t('like') || '点赞'}
+                       } ${(!canLike || likeLoading) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                       title={!canLike ? t('requiresResearcher1') : (userLiked ? t('unlike') : t('like'))}
                      >
                        <Heart
                          className={`w-4 h-4 transition-all ${userLiked ? 'fill-current' : ''}`}
@@ -1153,7 +1201,51 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                    <div className="flex items-center justify-between gap-4 text-xs text-slate-500 flex-wrap">
                      <div className="flex items-center gap-2 flex-wrap">
                        <span className="bg-white border border-slate-200 px-2 py-0.5 rounded font-medium text-indigo-600">
-                         {demo.layer === 'general' ? demo.categoryId : t('communityRoot')}
+                         {demo.layer === 'general' 
+                           ? (() => {
+                               // 首先尝试通过CATEGORY_ID_TO_TRANSLATION_KEY获取翻译键
+                               if (CATEGORY_ID_TO_TRANSLATION_KEY[demo.categoryId]) {
+                                 return t(CATEGORY_ID_TO_TRANSLATION_KEY[demo.categoryId]);
+                               }
+                               
+                               // 直接使用demo.categoryId作为主题名称获取翻译键
+                               const translationKey = {
+                                 'Physics': 'physics',
+                                 'Chemistry': 'chemistry',
+                                 'Mathematics': 'mathematics',
+                                 'Biology': 'biology',
+                                 'Computer Science': 'computerScience',
+                                 'Astronomy': 'astronomy',
+                                 'Earth Science': 'earthScience',
+                                 'Creative Tools': 'creativeTools'
+                               }[demo.categoryId];
+                               if (translationKey) {
+                                 return t(translationKey);
+                               }
+                               
+                               // 如果demo.categoryId是分类ID，尝试获取对应的翻译键
+                               const category = categories?.find(c => c.id === demo.categoryId);
+                               if (category) {
+                                 const translationKey = {
+                                   'Physics': 'physics',
+                                   'Chemistry': 'chemistry',
+                                   'Mathematics': 'mathematics',
+                                   'Biology': 'biology',
+                                   'Computer Science': 'computerScience',
+                                   'Astronomy': 'astronomy',
+                                   'Earth Science': 'earthScience',
+                                   'Creative Tools': 'creativeTools'
+                                 }[category.name];
+                                 if (translationKey) {
+                                   return t(translationKey);
+                                 }
+                                 return category.name;
+                               }
+                               
+                               // 最后返回原始值
+                               return demo.categoryId;
+                             })()
+                           : t('communityRoot')}
                        </span>
                        <span>
                          {t('by')}{' '}
@@ -1216,6 +1308,68 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                  
                  <div className="prose prose-sm prose-slate text-slate-600">
                    <p className="leading-relaxed">{demo.description}</p>
+                 </div>
+
+                 {/* Tags Section */}
+                 <div className="space-y-3">
+                   <div className="flex items-center justify-between">
+                     <h6 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                       <Hash className="w-4 h-4" />
+                       {t('tags')}
+                     </h6>
+                     {((currentUserId && demo.creatorId === currentUserId) || currentUserRole === 'general_admin') && (
+                       <button
+                         onClick={() => setIsEditingTags(true)}
+                         className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors"
+                       >
+                         <Edit3 className="w-3.5 h-3.5" />
+                         {t('editTags')}
+                       </button>
+                     )}
+                   </div>
+                   
+                   {isEditingTags ? (
+                     <div className="space-y-3 p-4 bg-white rounded-xl border border-slate-200">
+                       <TagSelector
+                         selectedTags={editTags}
+                         onChange={setEditTags}
+                         lang="cn"
+                       />
+                       <div className="flex gap-2">
+                         <button
+                           onClick={handleSaveTags}
+                           className="flex-1 py-2 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-indigo-700 hover:to-purple-700 transition-all"
+                         >
+                           {t('saveTags')}
+                         </button>
+                         <button
+                           onClick={() => setIsEditingTags(false)}
+                           className="py-2 px-4 bg-white border border-slate-300 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50 transition-all"
+                         >
+                           {t('cancel')}
+                         </button>
+                       </div>
+                     </div>
+                   ) : (
+                     <div className="flex flex-wrap gap-2">
+                       {(demo.tags && demo.tags.length > 0) ? (
+                         demo.tags.map((tagId) => {
+                           const color = getTagColor(tagId);
+                           return (
+                             <span
+                               key={tagId}
+                               className="px-3 py-1.5 rounded-full text-sm font-medium text-white"
+                               style={{ backgroundColor: color }}
+                             >
+                               {getTagName(tagId, 'cn')}
+                             </span>
+                           );
+                         })
+                       ) : (
+                         <span className="text-sm text-slate-400">{t('noTagsYet')}</span>
+                       )}
+                     </div>
+                   )}
                  </div>
 
                  {onPublishToOther && (
@@ -1503,7 +1657,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                        }}
                      >
                         <Send className="w-4 h-4" />
-                        <span className="text-xs font-medium hidden sm:inline">{t('send') || '发送'}</span>
+                        <span className="text-xs font-medium hidden sm:inline">{t('send')}</span>
                      </button>
                    </div>
                    {aiLoading && (
@@ -1594,7 +1748,7 @@ export const DemoPlayer = ({ demo, currentUserId, onClose, t, onOpenDemo, onLike
                     disabled={editLoading}
                     className="flex-1 py-2 px-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg font-medium hover:from-amber-600 hover:to-orange-600 transition-all disabled:opacity-50"
                   >
-                    {editLoading ? '提交中...' : '提交更新'}
+                    {editLoading ? t('submittingUpdate') : t('submitUpdate')}
                   </button>
                 </div>
               </div>

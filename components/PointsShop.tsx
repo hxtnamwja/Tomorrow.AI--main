@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Star, ShoppingCart, CheckCircle, Palette, Image as ImageIcon, Type, Trophy, Frame, Sparkles, Layers, Crown, Gift, Zap, Gem, Check, Wand2, UserCircle, Cpu, Gamepad2, Atom, FlaskConical, Compass, Cat, Rabbit, Lightbulb, Droplets, Flame, Ghost } from 'lucide-react';
+import { X, Star, ShoppingCart, CheckCircle, Palette, Image as ImageIcon, Type, Trophy, Frame, Sparkles, Layers, Crown, Gift, Zap, Gem, Check, Wand2, UserCircle, Cpu, Gamepad2, Atom, FlaskConical, Compass, Cat, Rabbit, Lightbulb, Droplets, Flame, Ghost, HelpCircle, Award } from 'lucide-react';
 import { User as UserType, Language } from '../types';
 import { StorageService } from '../services/storageService';
 import {
@@ -31,6 +31,7 @@ export const PointsShop: React.FC<PointsShopProps> = ({ currentUserId, lang, t, 
   const [user, setUser] = useState<UserType | null>(null);
   const [loading, setLoading] = useState(true);
   const [recentlyPurchased, setRecentlyPurchased] = useState<string[]>([]);
+  const [showPointsInfo, setShowPointsInfo] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -1964,7 +1965,7 @@ export const PointsShop: React.FC<PointsShopProps> = ({ currentUserId, lang, t, 
           className="flex items-center gap-2 text-slate-600 hover:text-slate-800 transition-colors mb-6"
         >
           <X className="w-4 h-4" />
-          {lang === 'cn' ? '返回个人中心' : 'Back to Profile'}
+          {t('backToProfile')}
         </button>
 
         <div className="relative overflow-hidden glass-card rounded-3xl p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-700">
@@ -2000,6 +2001,12 @@ export const PointsShop: React.FC<PointsShopProps> = ({ currentUserId, lang, t, 
                   </p>
                 </div>
               </div>
+              <button
+                onClick={() => setShowPointsInfo(true)}
+                className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl transition-all group"
+              >
+                <HelpCircle className="w-6 h-6 text-yellow-300 group-hover:text-white transition-colors" />
+              </button>
             </div>
           </div>
         </div>
@@ -2043,6 +2050,97 @@ export const PointsShop: React.FC<PointsShopProps> = ({ currentUserId, lang, t, 
         {activeCategory === 'profile' && renderProfileSection()}
         {activeCategory === 'username' && renderUsernameSection()}
       </div>
+      
+      {/* Points & Contribution Info Modal */}
+      {showPointsInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-white">
+                    {lang === 'cn' ? '积分与贡献值说明' : 'Points & Contribution Guide'}
+                  </h3>
+                  <p className="text-indigo-100 mt-1 text-sm">
+                    {lang === 'cn' ? '完全非盈利' : 'Completely non-profit'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowPointsInfo(false)}
+                  className="p-2 hover:bg-white/20 rounded-full transition-colors"
+                >
+                  <X className="w-6 h-6 text-white" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              {/* Contribution Points */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                    <Award className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-800">
+                      {lang === 'cn' ? '贡献值' : 'Contribution Points'}
+                    </h4>
+                    <p className="text-sm text-slate-500">
+                      {lang === 'cn' ? '用于提升等级，解锁特权' : 'For leveling up and unlocking privileges'}
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                  <p className="text-sm text-slate-700">
+                    <span className="font-bold text-indigo-600">+10</span> {lang === 'cn' ? '上传审核通过的演示程序' : 'Upload an approved demo program'}
+                  </p>
+                </div>
+              </div>
+              
+              {/* Points */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
+                    <Star className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-800">
+                      {lang === 'cn' ? '积分' : 'Points'}
+                    </h4>
+                    <p className="text-sm text-slate-500">
+                      {lang === 'cn' ? '用于在积分商城兑换商品' : 'For redeeming items in the Points Shop'}
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 space-y-2">
+                  <p className="text-sm text-slate-700">
+                    <span className="font-bold text-emerald-600">+10</span> {lang === 'cn' ? '上传审核通过的演示程序' : 'Upload an approved demo program'}
+                  </p>
+                  <p className="text-sm text-slate-700">
+                    <span className="font-bold text-emerald-600">{lang === 'cn' ? '悬赏任务' : 'Reward tasks'}</span>
+                  </p>
+                </div>
+              </div>
+              
+              {/* Note */}
+              <div className="bg-amber-50 rounded-xl p-4 border border-amber-100">
+                <p className="text-sm text-amber-700">
+                  {lang === 'cn' ? '💡 本平台完全非盈利，所有功能均为免费使用' : '💡 This platform is completely non-profit, all features are free to use'}
+                </p>
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-slate-100 bg-slate-50">
+              <button
+                onClick={() => setShowPointsInfo(false)}
+                className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl hover:opacity-90 transition-opacity"
+              >
+                {lang === 'cn' ? '我知道了' : 'Got it'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

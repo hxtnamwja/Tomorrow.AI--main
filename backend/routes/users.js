@@ -15,6 +15,7 @@ const mapUserRow = (row) => {
     bio: row.bio || undefined,
     contributionPoints: row.contribution_points || 0,
     points: row.points || 0,
+    communityPoints: row.community_points || 0,
     favorites: row.favorites ? JSON.parse(row.favorites) : [],
     avatarBorder: row.avatar_border || undefined,
     avatarAccessory: row.avatar_accessory || undefined,
@@ -81,7 +82,7 @@ router.get('/', async (req, res) => {
   try {
     const users = await getAllRows(`
       SELECT id, username, role, created_at, is_banned, ban_reason, contact_info, bio, 
-             contribution_points, points, favorites, avatar_border, avatar_accessory, avatar_effect,
+             contribution_points, points, community_points, favorites, avatar_border, avatar_accessory, avatar_effect,
              username_color, username_effect, profile_theme, profile_background, custom_title,
              unlocked_achievements, owned_items
       FROM users 
@@ -100,7 +101,7 @@ router.get('/public', async (req, res) => {
   try {
     const users = await getAllRows(`
       SELECT id, username, role, created_at, contact_info, bio, is_banned, ban_reason,
-             contribution_points, points, favorites, avatar_border, avatar_accessory, avatar_effect,
+             contribution_points, points, community_points, favorites, avatar_border, avatar_accessory, avatar_effect,
              username_color, username_effect, profile_theme, profile_background, custom_title,
              unlocked_achievements, owned_items
       FROM users 
@@ -163,7 +164,7 @@ router.get('/:id', async (req, res) => {
   try {
     const user = await getRow(`
       SELECT id, username, role, created_at, is_banned, ban_reason, contact_info, payment_qr, bio,
-             contribution_points, points, favorites, avatar_border, avatar_accessory, avatar_effect,
+             contribution_points, points, community_points, favorites, avatar_border, avatar_accessory, avatar_effect,
              username_color, username_effect, profile_theme, profile_background, custom_title,
              unlocked_achievements, owned_items
       FROM users 
@@ -241,7 +242,7 @@ router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const { 
     username, password, contactInfo, paymentQr, bio,
-    contributionPoints, points, favorites,
+    contributionPoints, points, communityPoints, favorites,
     avatarBorder, avatarAccessory, avatarEffect,
     usernameColor, usernameEffect, profileTheme, profileBackground,
     customTitle, unlockedAchievements, ownedItems
@@ -294,6 +295,12 @@ router.put('/:id', async (req, res) => {
     if (points !== undefined) {
       updates.push('points = ?');
       params.push(points);
+    }
+
+    // Both users and admins can update community points
+    if (communityPoints !== undefined) {
+      updates.push('community_points = ?');
+      params.push(communityPoints);
     }
 
     if (favorites !== undefined) {
@@ -358,7 +365,7 @@ router.put('/:id', async (req, res) => {
 
     const updatedUser = await getRow(`
       SELECT id, username, role, created_at, is_banned, ban_reason, contact_info, payment_qr, bio,
-             contribution_points, points, favorites, avatar_border, avatar_accessory, avatar_effect,
+             contribution_points, points, community_points, favorites, avatar_border, avatar_accessory, avatar_effect,
              username_color, username_effect, profile_theme, profile_background, custom_title,
              unlocked_achievements, owned_items
       FROM users WHERE id = ?

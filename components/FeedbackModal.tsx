@@ -13,6 +13,7 @@ interface FeedbackModalProps {
   demoTitle?: string;
   communityName?: string;
   onSuccess?: () => void;
+  t: (key: string) => string;
 }
 
 const FeedbackModal: React.FC<FeedbackModalProps> = ({
@@ -24,7 +25,8 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
   demoId,
   demoTitle,
   communityName,
-  onSuccess
+  onSuccess,
+  t
 }) => {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -33,15 +35,15 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
   const getTypeLabel = () => {
     switch (type) {
       case 'demo_complaint':
-        return '投诉演示程序';
+        return t('demoComplaint');
       case 'community_feedback':
-        return '社区反馈';
+        return t('communityFeedback');
       case 'website_feedback':
-        return '网页建议';
+        return t('websiteFeedback');
       case 'ban_appeal':
-        return '账户解封申诉';
+        return t('banAppeal');
       default:
-        return '反馈';
+        return t('feedback');
     }
   };
 
@@ -77,14 +79,14 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
         communityName
       });
       
-      alert('反馈提交成功！');
+      alert(t('feedbackSubmittedSuccessfully'));
       setTitle('');
       setContent('');
       onClose();
       if (onSuccess) onSuccess();
     } catch (error) {
       console.error('Error submitting feedback:', error);
-      alert('提交失败，请重试');
+      alert(t('submitFailedPleaseTryAgain'));
     } finally {
       setIsSubmitting(false);
     }
@@ -111,36 +113,36 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {type === 'demo_complaint' && demoTitle && (
             <div className="bg-slate-50 p-4 rounded-xl">
-              <p className="text-sm text-slate-500 mb-1">投诉的演示程序</p>
+              <p className="text-sm text-slate-500 mb-1">{t('demoBeingComplained')}</p>
               <p className="font-bold text-slate-800">{demoTitle}</p>
             </div>
           )}
 
           {type === 'community_feedback' && communityName && (
             <div className="bg-slate-50 p-4 rounded-xl">
-              <p className="text-sm text-slate-500 mb-1">反馈的社区</p>
+              <p className="text-sm text-slate-500 mb-1">{t('communityBeingFeedbacked')}</p>
               <p className="font-bold text-slate-800">{communityName}</p>
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">标题</label>
+            <label className="block text-sm font-medium text-slate-700 mb-2">{t('title')}</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="请输入标题..."
+              placeholder={t('pleaseEnterTitle')}
               className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">详细描述</label>
+            <label className="block text-sm font-medium text-slate-700 mb-2">{t('detailedDescription')}</label>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="请详细描述您的问题或建议..."
+              placeholder={t('pleaseDescribeYourProblemOrSuggestion')}
               className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 min-h-[150px] resize-none"
               required
             />
@@ -152,14 +154,14 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
               onClick={onClose}
               className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors"
             >
-              取消
+              {t('cancel')}
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
               className="flex-1 px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-indigo-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? '提交中...' : (type === 'ban_appeal' ? '提交申诉' : '提交反馈')}
+              {isSubmitting ? t('submitting') : (type === 'ban_appeal' ? t('submitAppeal') : t('submitFeedback'))}
             </button>
           </div>
         </form>
